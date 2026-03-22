@@ -22,6 +22,7 @@ pub struct App {
     pub loadable_themes: Vec<String>,
     pub selected_theme_index: usize,
     pub dirty: bool,
+    pub pending_apply: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -303,6 +304,7 @@ impl Default for App {
             loadable_themes: Vec::new(),
             selected_theme_index: 0,
             dirty: false,
+            pending_apply: false,
         }
     }
 }
@@ -341,7 +343,12 @@ impl App {
 
         self.theme.name = normalized_name;
         self.sync_theme_name_input();
-        self.save_theme();
+        if self.pending_apply {
+            self.pending_apply = false;
+            self.apply_theme_to_zellij();
+        } else {
+            self.save_theme();
+        }
         self.refresh_theme_list();
         self.input_mode = InputMode::Preview;
     }
@@ -1510,7 +1517,15 @@ pub fn run(mut app: App) -> std::result::Result<(), Box<dyn std::error::Error>> 
                         }
                         KeyCode::Char('a') => {
                             app.message = None;
-                            app.apply_theme_to_zellij();
+                            if app.theme.name == "default" {
+                                app.pending_apply = true;
+                                app.open_theme_name_input();
+                                app.message = Some(String::from(
+                                    "Name this theme before applying",
+                                ));
+                            } else {
+                                app.apply_theme_to_zellij();
+                            }
                         }
                         KeyCode::Char('?') => {
                             app.message = None;
@@ -1594,6 +1609,7 @@ pub fn run(mut app: App) -> std::result::Result<(), Box<dyn std::error::Error>> 
                 },
                 InputMode::ThemeNameInput => match key.code {
                     KeyCode::Esc => {
+                        app.pending_apply = false;
                         app.input_mode = InputMode::Preview;
                         app.message = Some(String::from("Save cancelled"));
                     }
