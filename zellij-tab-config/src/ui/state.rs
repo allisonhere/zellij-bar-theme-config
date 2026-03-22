@@ -71,6 +71,10 @@ pub enum PreviewElement {
 }
 
 impl PreviewElement {
+    pub fn is_frame(&self) -> bool {
+        matches!(self, Self::PaneSelected | Self::PaneUnselected | Self::PaneHighlight)
+    }
+
     pub fn component_type(&self) -> ThemeComponentType {
         match self {
             Self::TabSelected => ThemeComponentType::RibbonSelected,

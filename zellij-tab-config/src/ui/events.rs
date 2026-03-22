@@ -11,23 +11,29 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
                 KeyCode::Char('q') | KeyCode::Esc => return true,
                 KeyCode::Up => {
                     app.selected_element.move_up();
+                    if app.selected_element.is_frame() { app.selected_attribute = crate::ui::state::PreviewAttribute::Base; }
                     app.message = None;
                 }
                 KeyCode::Down => {
                     app.selected_element.move_down();
+                    if app.selected_element.is_frame() { app.selected_attribute = crate::ui::state::PreviewAttribute::Base; }
                     app.message = None;
                 }
                 KeyCode::Left => {
                     app.selected_element.move_left();
+                    if app.selected_element.is_frame() { app.selected_attribute = crate::ui::state::PreviewAttribute::Base; }
                     app.message = None;
                 }
                 KeyCode::Right => {
                     app.selected_element.move_right();
+                    if app.selected_element.is_frame() { app.selected_attribute = crate::ui::state::PreviewAttribute::Base; }
                     app.message = None;
                 }
                 KeyCode::Tab => {
                     app.message = None;
-                    app.selected_attribute.cycle();
+                    if !app.selected_element.is_frame() {
+                        app.selected_attribute.cycle();
+                    }
                 }
                 KeyCode::Char('c') => {
                     app.message = None;
