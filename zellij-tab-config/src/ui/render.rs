@@ -480,15 +480,6 @@ impl App {
             }
         };
 
-        // ── helper: one ▶ content ▶ pill on unsel colors ─────────────────
-        // Returns (open_arrow, key_span, action_span, close_arrow)
-        // pill_width: 1(open) + space+key+space + 1(trans) + space+action+space + 1(close) + 1(gap)
-        let pill_width = |key: &str, action: &str| -> usize {
-            1 + key.chars().count() + 2 + 1 + action.chars().count() + 2 + 1 + 1
-        };
-        // key_only_width: 1(open) + space+key+space + 1(close) + 1(gap)
-        let key_only_width = |key: &str| -> usize { 1 + key.chars().count() + 2 + 1 + 1 };
-
         let pill_full = |key: &str, action: &str| -> Vec<Span<'static>> {
             vec![
                 Span::styled("", Style::new().fg(sel_bg).bg(bar_bg)),
@@ -518,17 +509,20 @@ impl App {
 
         let gap = || Span::styled(" ", Style::new().bg(bar_bg));
 
+        // Measure a candidate set of pill spans to get their true rendered width.
+        let spans_width = |spans: &[Span]| -> usize { spans.iter().map(|s| s.width()).sum() };
+
         // (key, long label, short label)
         let bindings: &[(&str, &str, &str)] = match self.input_mode {
             InputMode::Preview => &[
-                ("↑↓←→", "NAVIGATE", "NAV"),
-                ("c",    "COLOR",    "CLR"),
-                ("tab",  "FG/BG",    "F/B"),
-                ("s",    "SAVE AS",  "SAVE"),
-                ("l",    "LOAD",     "LD"),
-                ("a",    "SAVE+APPLY","APPLY"),
-                ("?",    "HELP",     "?"),
-                ("q",    "QUIT",     "QT"),
+                ("↑↓←→", "NAVIGATE",   "NAV"),
+                ("c",    "COLOR",      "CLR"),
+                ("tab",  "FG/BG",      "F/B"),
+                ("s",    "SAVE AS",    "SAVE"),
+                ("l",    "LOAD",       "LD"),
+                ("a",    "SAVE+APPLY", "APPLY"),
+                ("?",    "HELP",       "?"),
+                ("q",    "QUIT",       "QT"),
             ],
             InputMode::ColorPicker => &[
                 ("↑↓",     "CHANNEL", "CH"),
@@ -555,8 +549,7 @@ impl App {
             ],
         };
 
-        // ── Pick label level based on available width ─────────────────────
-        let mode_pill_w = 1 + mode_label.chars().count() + 1 + 1; // open+label+close+gap
+        // ── Pick label level by measuring actual span widths ──────────────
         let current_color = self.get_color_by_attr(self.selected_attribute);
         let info = format!(
             " {}{} │ {} {} #{:02x}{:02x}{:02x} ",
@@ -568,15 +561,37 @@ impl App {
             current_color.g,
             current_color.b,
         );
-        let right_w = info.chars().count() + self.message.as_ref().map(|m| m.chars().count() + 3).unwrap_or(0);
+        let right_w = info.chars().count()
+            + self.message.as_ref().map(|m| m.chars().count() + 3).unwrap_or(0);
+
+        // mode pill spans (built once, measured)
+        let mode_pill_spans: Vec<Span> = vec![
+            Span::styled("", Style::new().fg(mode_bg).bg(bar_bg)),
+            Span::styled(mode_label, Style::new().fg(mode_fg).bg(mode_bg).add_modifier(Modifier::BOLD)),
+            Span::styled("", Style::new().fg(mode_bg).bg(bar_bg)),
+            gap(),
+        ];
+        let mode_pill_w = spans_width(&mode_pill_spans);
+
+        let measure_pills = |label_idx: usize| -> usize {
+            bindings.iter().map(|(k, l, s)| {
+                let action = if label_idx == 0 { l } else { s };
+                let mut w = spans_width(&pill_full(k, action));
+                w += gap().width();
+                w
+            }).sum()
+        };
+        let measure_keys_only = || -> usize {
+            bindings.iter().map(|(k, _, _)| {
+                spans_width(&pill_key_only(k)) + gap().width()
+            }).sum()
+        };
+
         let available = (area.width as usize).saturating_sub(mode_pill_w + right_w);
-
-        let full_w: usize  = bindings.iter().map(|(k,l,_)| pill_width(k,l)).sum();
-        let short_w: usize = bindings.iter().map(|(k,_,s)| pill_width(k,s)).sum();
-
-        let level = if full_w <= available { 0 }
-                    else if short_w <= available { 1 }
+        let level = if measure_pills(0) <= available { 0 }
+                    else if measure_pills(1) <= available { 1 }
                     else { 2 };
+        let _ = measure_keys_only; // silence unused warning
 
         let mut spans: Vec<Span> = Vec::new();
 
