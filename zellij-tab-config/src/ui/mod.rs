@@ -21,6 +21,7 @@ pub struct App {
     pub theme_name_input: String,
     pub loadable_themes: Vec<String>,
     pub selected_theme_index: usize,
+    pub dirty: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,6 +122,8 @@ impl PreviewElement {
         use PreviewElement::*;
         &[
             TabSelected,
+            TabUnselected1,
+            TabUnselected2,
             PaneSelected,
             TextSelected,
             PaneUnselected,
@@ -174,7 +177,7 @@ impl PreviewElement {
             PaneHighlight => PaneSelected,
             TableTitle | TableCellSelected | TableCellUnselected | ListSelected
             | ListUnselected | ExitSuccess => PaneSelected,
-            ExitError => ExitSuccess,
+            ExitError => PaneSelected,
         };
     }
 
@@ -203,6 +206,7 @@ pub struct ColorEditor {
     pub g: u8,
     pub b: u8,
     pub editing_channel: usize,
+    pub hex_input: Option<String>,
 }
 
 impl ColorEditor {
@@ -212,7 +216,49 @@ impl ColorEditor {
             g,
             b,
             editing_channel: 0,
+            hex_input: None,
         }
+    }
+
+    pub fn start_hex_input(&mut self) {
+        self.hex_input = Some(format!("{:02x}{:02x}{:02x}", self.r, self.g, self.b));
+    }
+
+    pub fn push_hex_char(&mut self, c: char) {
+        if let Some(ref mut s) = self.hex_input {
+            if s.len() < 6 && c.is_ascii_hexdigit() {
+                s.push(c.to_ascii_lowercase());
+            }
+        }
+    }
+
+    pub fn pop_hex_char(&mut self) -> bool {
+        if let Some(ref mut s) = self.hex_input {
+            s.pop();
+            return true;
+        }
+        false
+    }
+
+    pub fn commit_hex(&mut self) -> Option<RgbColor> {
+        if let Some(ref s) = self.hex_input {
+            if s.len() == 6 {
+                let result = crate::theme::RgbColor::from_hex(s);
+                self.hex_input = None;
+                if let Some(c) = result {
+                    self.r = c.r;
+                    self.g = c.g;
+                    self.b = c.b;
+                    return Some(c);
+                }
+            }
+        }
+        self.hex_input = None;
+        None
+    }
+
+    pub fn cancel_hex(&mut self) {
+        self.hex_input = None;
     }
 
     pub fn to_rgb(&self) -> RgbColor {
@@ -256,6 +302,7 @@ impl Default for App {
             theme_name_input: String::from("default"),
             loadable_themes: Vec::new(),
             selected_theme_index: 0,
+            dirty: false,
         }
     }
 }
@@ -271,6 +318,7 @@ impl App {
         match self.config_manager.save_theme(&self.theme) {
             Ok(()) => {
                 self.message = Some(format!("✓ Saved: {}", self.theme.name));
+                self.dirty = false;
             }
             Err(e) => {
                 self.message = Some(format!("✗ Error: {}", e));
@@ -328,6 +376,7 @@ impl App {
                 self.theme = theme;
                 self.sync_theme_name_input();
                 self.message = Some(format!("✓ Loaded: {}", name));
+                self.dirty = false;
             }
             Err(e) => {
                 self.message = Some(format!("✗ Error: {}", e));
@@ -340,7 +389,7 @@ impl App {
         match self.config_manager.apply_theme_to_zellij(&self.theme) {
             Ok(()) => {
                 self.message = Some(format!(
-                    "✓ Applied \"{}\" — restart Zellij to see changes",
+                    "✓ Saved + applied \"{}\" — restart Zellij to see changes",
                     self.theme.name
                 ));
             }
@@ -419,6 +468,7 @@ impl App {
             PreviewAttribute::Foreground => component.base = color,
             PreviewAttribute::Background => component.background = color,
         }
+        self.dirty = true;
     }
 
     pub fn apply_current_color(&mut self) {
@@ -888,16 +938,41 @@ impl App {
         spans.push(gap());
 
         // ── Keybinding pills ──────────────────────────────────────────────
-        let bindings: &[(&str, &str)] = &[
-            ("↑↓←→", "NAVIGATE"),
-            ("c", "COLOR"),
-            ("tab", "FG/BG"),
-            ("s", "SAVE AS"),
-            ("l", "LOAD"),
-            ("a", "APPLY"),
-            ("?", "HELP"),
-            ("q", "QUIT"),
-        ];
+        let bindings: &[(&str, &str)] = match self.input_mode {
+            InputMode::Preview => &[
+                ("↑↓←→", "NAVIGATE"),
+                ("c", "COLOR"),
+                ("tab", "FG/BG"),
+                ("s", "SAVE AS"),
+                ("l", "LOAD"),
+                ("a", "SAVE+APPLY"),
+                ("?", "HELP"),
+                ("q", "QUIT"),
+            ],
+            InputMode::ColorPicker => &[
+                ("↑↓", "CHANNEL"),
+                ("←→", "±5"),
+                ("S+←→", "±1"),
+                ("PgUp/Dn", "±25"),
+                ("#", "HEX"),
+                ("tab", "FG/BG"),
+                ("Enter", "KEEP"),
+                ("Esc", "CANCEL"),
+            ],
+            InputMode::ThemeNameInput => &[
+                ("type", "NAME"),
+                ("Enter", "SAVE"),
+                ("Esc", "CANCEL"),
+            ],
+            InputMode::ThemeLoad => &[
+                ("↑↓", "SELECT"),
+                ("Enter", "LOAD"),
+                ("Esc", "CANCEL"),
+            ],
+            InputMode::Help => &[
+                ("Esc", "CLOSE"),
+            ],
+        };
         for (key, action) in bindings {
             spans.extend(pill(key, action));
             spans.push(gap());
@@ -906,7 +981,9 @@ impl App {
         // ── Right side: element info + optional save message ──────────────
         let current_color = self.get_color_by_attr(self.selected_attribute);
         let info = format!(
-            " {} {} #{:02x}{:02x}{:02x} ",
+            " {}{} │ {} {} #{:02x}{:02x}{:02x} ",
+            self.theme.name,
+            if self.dirty { "*" } else { "" },
             self.selected_element.label(),
             self.selected_attribute.label(),
             current_color.r,
@@ -920,10 +997,11 @@ impl App {
         spans.push(Span::styled(" ".repeat(fill), Style::new().bg(bar_bg)));
 
         if let Some(ref msg) = self.message {
+            let msg_color = if msg.starts_with('✗') { Color::Red } else { Color::Green };
             spans.push(Span::styled(
                 format!(" {} ", msg),
                 Style::new()
-                    .fg(Color::Green)
+                    .fg(msg_color)
                     .bg(bar_bg)
                     .add_modifier(Modifier::BOLD),
             ));
@@ -1044,6 +1122,21 @@ impl App {
         )]));
         lines.push(Line::from(""));
 
+        // Hex input area
+        if let Some(ref hex_str) = self.color_editor.hex_input {
+            let display = format!("  #{:<6}█", hex_str);
+            lines.push(Line::from(vec![
+                Span::styled(display, Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled("  type hex, Enter to apply, Esc to cancel", Style::new().fg(Color::DarkGray)),
+            ]));
+        } else {
+            lines.push(Line::from(vec![Span::styled(
+                "  press # to enter hex code",
+                Style::new().fg(Color::DarkGray),
+            )]));
+        }
+        lines.push(Line::from(""));
+
         // Keybinding hints
         lines.push(Line::from(vec![Span::styled(
             " ↑↓:channel  ←→:±5  Shift+←→:±1  PgUp/Dn:±25",
@@ -1123,7 +1216,7 @@ impl App {
     fn render_help_overlay(&self, frame: &mut Frame) {
         let entries: &[(&str, &str)] = &[
             // Normal mode
-            ("↑ ↓ ← →",        "Navigate preview elements"),
+            ("↑/j  ↓/k  ← →",  "Navigate preview elements"),
             ("Tab",             "Toggle foreground / background"),
             ("c",               "Open color picker for selected color"),
             ("s",               "Save theme as… (prompts for name)"),
@@ -1142,7 +1235,7 @@ impl App {
             ("",                ""),
             // Theme loader
             ("↑ ↓",            "[Load] Navigate themes"),
-            ("Enter / a",      "[Load] Load selected theme"),
+            ("Enter",           "[Load] Load selected theme"),
             ("Esc",             "[Load] Cancel"),
         ];
 
@@ -1201,7 +1294,7 @@ impl App {
         }
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            " Up/Down: select  Enter/a: load  Esc: cancel",
+            " Up/Down: select  Enter: load  Esc: cancel",
             Style::new().fg(Color::DarkGray),
         )));
 
@@ -1400,35 +1493,76 @@ pub fn run(mut app: App) -> std::result::Result<(), Box<dyn std::error::Error>> 
                             app.message = None;
                         }
                         KeyCode::Tab => {
+                            app.message = None;
                             app.selected_attribute.toggle();
                         }
                         KeyCode::Char('c') => {
+                            app.message = None;
                             app.open_color_picker();
                         }
                         KeyCode::Char('s') => {
+                            app.message = None;
                             app.open_theme_name_input();
                         }
                         KeyCode::Char('l') => {
+                            app.message = None;
                             app.open_theme_load_dialog();
                         }
                         KeyCode::Char('a') => {
+                            app.message = None;
                             app.apply_theme_to_zellij();
                         }
                         KeyCode::Char('?') => {
+                            app.message = None;
                             app.input_mode = InputMode::Help;
+                        }
+                        KeyCode::Enter => {
+                            app.message = None;
+                            app.open_color_picker();
+                        }
+                        KeyCode::Char('j') => {
+                            app.selected_element.move_down();
+                            app.message = None;
+                        }
+                        KeyCode::Char('k') => {
+                            app.selected_element.move_up();
+                            app.message = None;
                         }
                         _ => {}
                     }
                 }
                 InputMode::ColorPicker => match key.code {
                     KeyCode::Esc => {
-                        app.close_color_picker(false);
+                        if app.color_editor.hex_input.is_some() {
+                            app.color_editor.cancel_hex();
+                        } else {
+                            app.close_color_picker(false);
+                        }
                     }
                     KeyCode::Enter => {
-                        app.close_color_picker(true);
+                        if app.color_editor.hex_input.is_some() {
+                            app.color_editor.commit_hex();
+                            app.apply_current_color();
+                        } else {
+                            app.close_color_picker(true);
+                        }
                     }
                     KeyCode::Tab => {
                         app.switch_editing_attribute();
+                    }
+                    KeyCode::Char('#') => {
+                        app.color_editor.start_hex_input();
+                    }
+                    KeyCode::Char(c) if app.color_editor.hex_input.is_some() => {
+                        app.color_editor.push_hex_char(c);
+                        // Live preview: if 6 chars, update
+                        if app.color_editor.hex_input.as_ref().map(|s| s.len()) == Some(6) {
+                            let _ = app.color_editor.commit_hex();
+                            app.apply_current_color();
+                        }
+                    }
+                    KeyCode::Backspace if app.color_editor.hex_input.is_some() => {
+                        app.color_editor.pop_hex_char();
                     }
                     // Up → toward R (channel 0, top slider)
                     KeyCode::Up => {
@@ -1479,7 +1613,7 @@ pub fn run(mut app: App) -> std::result::Result<(), Box<dyn std::error::Error>> 
                         app.input_mode = InputMode::Preview;
                         app.message = Some(String::from("Load cancelled"));
                     }
-                    KeyCode::Enter | KeyCode::Char('a') => {
+                    KeyCode::Enter => {
                         app.load_selected_theme();
                     }
                     KeyCode::Up => {
