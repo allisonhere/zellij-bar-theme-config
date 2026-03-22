@@ -1,0 +1,17 @@
+[package]
+name = "zellij_tab_config"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ratatui = { version = "0.30", features = ["all-widgets"] }
+crossterm = "0.29"
+kdl = "4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "5"
+thiserror = "2"
+
+[[bin]]
+name = "zellij-tab-config"
+path = "src/main.rs"

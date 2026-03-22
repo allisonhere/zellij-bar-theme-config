@@ -1,0 +1,378 @@
+use crate::theme::{RgbColor, Theme, ThemeComponent, ThemeComponentType};
+use std::fs;
+use std::path::PathBuf;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum ConfigError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("KDL parse error: {0}")]
+    KdlParse(String),
+    #[error("Theme not found: {0}")]
+    ThemeNotFound(String),
+}
+
+pub struct ConfigManager {
+    config_dir: PathBuf,
+    themes_dir: PathBuf,
+}
+
+impl ConfigManager {
+    pub fn new() -> Self {
+        let config_dir = dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("zellij");
+        let themes_dir = config_dir.join("themes");
+
+        Self {
+            config_dir,
+            themes_dir,
+        }
+    }
+
+    pub fn ensure_themes_dir(&self) -> Result<(), ConfigError> {
+        if !self.themes_dir.exists() {
+            fs::create_dir_all(&self.themes_dir)?;
+        }
+        Ok(())
+    }
+
+    pub fn list_themes(&self) -> Result<Vec<String>, ConfigError> {
+        let mut themes = Vec::new();
+
+        if self.themes_dir.exists() {
+            for entry in fs::read_dir(&self.themes_dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.extension().map_or(false, |ext| ext == "kdl") {
+                    if let Some(stem) = path.file_stem() {
+                        themes.push(stem.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+
+        Ok(themes)
+    }
+
+    pub fn load_theme(&self, name: &str) -> Result<Theme, ConfigError> {
+        let kdl_path = self.themes_dir.join(format!("{}.kdl", name));
+
+        if kdl_path.exists() {
+            let content = fs::read_to_string(&kdl_path)?;
+            parse_theme_kdl(&content, name)
+        } else {
+            Ok(Theme::default())
+        }
+    }
+
+    pub fn save_theme(&self, theme: &Theme) -> Result<(), ConfigError> {
+        self.ensure_themes_dir()?;
+        let kdl_path = self.themes_dir.join(format!("{}.kdl", theme.name));
+        let content = theme_to_kdl(theme);
+        fs::write(kdl_path, content)?;
+        Ok(())
+    }
+
+    pub fn apply_theme_to_zellij(&self, theme: &Theme) -> Result<(), ConfigError> {
+        self.save_theme(theme)?;
+
+        let config_path = self.config_dir.join("config.kdl");
+        let existing = if config_path.exists() {
+            fs::read_to_string(&config_path)?
+        } else {
+            String::new()
+        };
+
+        let theme_line = format!("theme \"{}\"", theme.name);
+        let updated = if existing.lines().any(|l| l.trim_start().starts_with("theme ")) {
+            existing
+                .lines()
+                .map(|l| {
+                    if l.trim_start().starts_with("theme ") {
+                        theme_line.as_str()
+                    } else {
+                        l
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+                + "\n"
+        } else if existing.is_empty() {
+            format!("{}\n", theme_line)
+        } else {
+            format!("{}\n{}\n", existing.trim_end(), theme_line)
+        };
+
+        fs::write(config_path, updated)?;
+        Ok(())
+    }
+
+    pub fn get_config_dir(&self) -> &PathBuf {
+        &self.config_dir
+    }
+
+    pub fn get_themes_dir(&self) -> &PathBuf {
+        &self.themes_dir
+    }
+}
+
+impl Default for ConfigManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn parse_theme_kdl(content: &str, name: &str) -> Result<Theme, ConfigError> {
+    let doc: kdl::KdlDocument = content
+        .parse()
+        .map_err(|e: kdl::KdlError| ConfigError::KdlParse(e.to_string()))?;
+
+    let theme_node =
+        if let Some(themes_node) = doc.nodes().iter().find(|n| n.name().value() == "themes") {
+            themes_node
+                .children()
+                .as_ref()
+                .and_then(|children| children.nodes().iter().find(|n| n.name().value() == name))
+                .ok_or_else(|| ConfigError::ThemeNotFound(name.to_string()))?
+        } else {
+            doc.nodes()
+                .iter()
+                .find(|n| n.name().value() == name)
+                .ok_or_else(|| ConfigError::ThemeNotFound(name.to_string()))?
+        };
+
+    let children: Vec<_> = theme_node
+        .children()
+        .as_ref()
+        .map(|d| d.nodes().to_vec())
+        .unwrap_or_default();
+
+    // Detect Zellij palette format by presence of standard palette keys.
+    let palette_keys = ["fg", "bg", "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
+    let is_palette = children.iter().any(|n| palette_keys.contains(&n.name().value()));
+
+    if is_palette {
+        return Ok(theme_from_palette(&children, name));
+    }
+
+    let mut theme = Theme::default();
+    theme.name = name.to_string();
+
+    for child in &children {
+        let component_type = match child.name().value() {
+            "text_unselected" => ThemeComponentType::TextUnselected,
+            "text_selected" => ThemeComponentType::TextSelected,
+            "ribbon_unselected" => ThemeComponentType::RibbonUnselected,
+            "ribbon_selected" => ThemeComponentType::RibbonSelected,
+            "table_title" => ThemeComponentType::TableTitle,
+            "table_cell_unselected" => ThemeComponentType::TableCellUnselected,
+            "table_cell_selected" => ThemeComponentType::TableCellSelected,
+            "list_unselected" => ThemeComponentType::ListUnselected,
+            "list_selected" => ThemeComponentType::ListSelected,
+            "frame_unselected" => ThemeComponentType::FrameUnselected,
+            "frame_selected" => ThemeComponentType::FrameSelected,
+            "frame_highlight" => ThemeComponentType::FrameHighlight,
+            "exit_code_success" => ThemeComponentType::ExitCodeSuccess,
+            "exit_code_error" => ThemeComponentType::ExitCodeError,
+            _ => continue,
+        };
+
+        let component = parse_component(child);
+        set_component(&mut theme, component_type, component);
+    }
+
+    Ok(theme)
+}
+
+fn parse_palette_color(nodes: &[kdl::KdlNode], key: &str) -> Option<RgbColor> {
+    let node = nodes.iter().find(|n| n.name().value() == key)?;
+    let entries: Vec<_> = node.entries().iter().collect();
+    if entries.len() < 3 {
+        return None;
+    }
+    let r = entries[0].value().as_i64()?.clamp(0, 255) as u8;
+    let g = entries[1].value().as_i64()?.clamp(0, 255) as u8;
+    let b = entries[2].value().as_i64()?.clamp(0, 255) as u8;
+    Some(RgbColor::new(r, g, b))
+}
+
+fn theme_from_palette(nodes: &[kdl::KdlNode], name: &str) -> Theme {
+    let black   = parse_palette_color(nodes, "black")  .unwrap_or(RgbColor::new(30, 30, 30));
+    let fg      = parse_palette_color(nodes, "fg")     .unwrap_or(RgbColor::new(200, 200, 200));
+    let bg      = parse_palette_color(nodes, "bg")     .unwrap_or(RgbColor::new(40, 40, 40));
+    let white   = parse_palette_color(nodes, "white")  .unwrap_or(RgbColor::new(240, 240, 240));
+    let red     = parse_palette_color(nodes, "red")    .unwrap_or(RgbColor::new(220, 80, 80));
+    let green   = parse_palette_color(nodes, "green")  .unwrap_or(RgbColor::new(80, 200, 80));
+    let yellow  = parse_palette_color(nodes, "yellow") .unwrap_or(RgbColor::new(220, 190, 100));
+    let blue    = parse_palette_color(nodes, "blue")   .unwrap_or(RgbColor::new(80, 130, 210));
+    let magenta = parse_palette_color(nodes, "magenta").unwrap_or(RgbColor::new(180, 100, 200));
+    let orange  = parse_palette_color(nodes, "orange") .unwrap_or(yellow);
+
+    // A slightly lighter bg for "selected" backgrounds
+    let bg_sel = RgbColor::new(
+        bg.r.saturating_add(25),
+        bg.g.saturating_add(25),
+        bg.b.saturating_add(25),
+    );
+
+    let mk = |base: RgbColor, background: RgbColor| ThemeComponent {
+        base,
+        background,
+        emphasis_0: white,
+        emphasis_1: fg,
+        emphasis_2: RgbColor::new(fg.r / 2 + 60, fg.g / 2 + 60, fg.b / 2 + 60),
+        emphasis_3: black,
+    };
+
+    Theme {
+        name: name.to_string(),
+        text_unselected:       mk(fg,      bg),
+        text_selected:         mk(white,   bg_sel),
+        ribbon_unselected:     mk(fg,      bg),
+        ribbon_selected:       mk(bg,      blue),
+        table_title:           mk(blue,    bg),
+        table_cell_unselected: mk(fg,      bg),
+        table_cell_selected:   mk(white,   bg_sel),
+        list_unselected:       mk(fg,      bg),
+        list_selected:         mk(white,   blue),
+        frame_unselected:      mk(black,   bg),
+        frame_selected:        mk(blue,    bg),
+        frame_highlight:       mk(orange,  bg),
+        exit_code_success:     mk(green,   bg),
+        exit_code_error:       mk(red,     bg),
+    }
+}
+
+fn parse_component(node: &kdl::KdlNode) -> ThemeComponent {
+    let mut component = ThemeComponent::default();
+
+    let children = match node.children() {
+        Some(doc) => doc.nodes().to_vec(),
+        None => return component,
+    };
+
+    for child in &children {
+        let entries: Vec<_> = child.entries().iter().collect();
+        if entries.len() < 3 {
+            continue;
+        }
+        let r = entries[0].value().as_i64().unwrap_or(0).clamp(0, 255) as u8;
+        let g = entries[1].value().as_i64().unwrap_or(0).clamp(0, 255) as u8;
+        let b = entries[2].value().as_i64().unwrap_or(0).clamp(0, 255) as u8;
+        let color = RgbColor::new(r, g, b);
+
+        match child.name().value() {
+            "base" => component.base = color,
+            "background" => component.background = color,
+            "emphasis_0" => component.emphasis_0 = color,
+            "emphasis_1" => component.emphasis_1 = color,
+            "emphasis_2" => component.emphasis_2 = color,
+            "emphasis_3" => component.emphasis_3 = color,
+            _ => {}
+        }
+    }
+
+    component
+}
+
+fn set_component(theme: &mut Theme, component_type: ThemeComponentType, component: ThemeComponent) {
+    match component_type {
+        ThemeComponentType::TextUnselected => theme.text_unselected = component,
+        ThemeComponentType::TextSelected => theme.text_selected = component,
+        ThemeComponentType::RibbonUnselected => theme.ribbon_unselected = component,
+        ThemeComponentType::RibbonSelected => theme.ribbon_selected = component,
+        ThemeComponentType::TableTitle => theme.table_title = component,
+        ThemeComponentType::TableCellUnselected => theme.table_cell_unselected = component,
+        ThemeComponentType::TableCellSelected => theme.table_cell_selected = component,
+        ThemeComponentType::ListUnselected => theme.list_unselected = component,
+        ThemeComponentType::ListSelected => theme.list_selected = component,
+        ThemeComponentType::FrameUnselected => theme.frame_unselected = component,
+        ThemeComponentType::FrameSelected => theme.frame_selected = component,
+        ThemeComponentType::FrameHighlight => theme.frame_highlight = component,
+        ThemeComponentType::ExitCodeSuccess => theme.exit_code_success = component,
+        ThemeComponentType::ExitCodeError => theme.exit_code_error = component,
+    }
+}
+
+fn theme_to_kdl(theme: &Theme) -> String {
+    let mut output = String::new();
+    output.push_str("themes {\n");
+    output.push_str(&format!("    {} {{\n", theme.name));
+
+    for component_type in ThemeComponentType::all() {
+        let component = get_component(theme, *component_type);
+        output.push_str(&format!("        {} {{\n", component_type.component_key()));
+        output.push_str(&format!(
+            "            base {} {} {}\n",
+            component.base.r, component.base.g, component.base.b
+        ));
+        output.push_str(&format!(
+            "            background {} {} {}\n",
+            component.background.r, component.background.g, component.background.b
+        ));
+        output.push_str(&format!(
+            "            emphasis_0 {} {} {}\n",
+            component.emphasis_0.r, component.emphasis_0.g, component.emphasis_0.b
+        ));
+        output.push_str(&format!(
+            "            emphasis_1 {} {} {}\n",
+            component.emphasis_1.r, component.emphasis_1.g, component.emphasis_1.b
+        ));
+        output.push_str(&format!(
+            "            emphasis_2 {} {} {}\n",
+            component.emphasis_2.r, component.emphasis_2.g, component.emphasis_2.b
+        ));
+        output.push_str(&format!(
+            "            emphasis_3 {} {} {}\n",
+            component.emphasis_3.r, component.emphasis_3.g, component.emphasis_3.b
+        ));
+        output.push_str("        }\n");
+    }
+
+    output.push_str("    }\n");
+    output.push_str("}\n");
+    output
+}
+
+fn get_component<'a>(theme: &'a Theme, component_type: ThemeComponentType) -> &'a ThemeComponent {
+    match component_type {
+        ThemeComponentType::TextUnselected => &theme.text_unselected,
+        ThemeComponentType::TextSelected => &theme.text_selected,
+        ThemeComponentType::RibbonUnselected => &theme.ribbon_unselected,
+        ThemeComponentType::RibbonSelected => &theme.ribbon_selected,
+        ThemeComponentType::TableTitle => &theme.table_title,
+        ThemeComponentType::TableCellUnselected => &theme.table_cell_unselected,
+        ThemeComponentType::TableCellSelected => &theme.table_cell_selected,
+        ThemeComponentType::ListUnselected => &theme.list_unselected,
+        ThemeComponentType::ListSelected => &theme.list_selected,
+        ThemeComponentType::FrameUnselected => &theme.frame_unselected,
+        ThemeComponentType::FrameSelected => &theme.frame_selected,
+        ThemeComponentType::FrameHighlight => &theme.frame_highlight,
+        ThemeComponentType::ExitCodeSuccess => &theme.exit_code_success,
+        ThemeComponentType::ExitCodeError => &theme.exit_code_error,
+    }
+}
+
+pub fn get_component_mut(
+    theme: &mut Theme,
+    component_type: ThemeComponentType,
+) -> &mut ThemeComponent {
+    match component_type {
+        ThemeComponentType::TextUnselected => &mut theme.text_unselected,
+        ThemeComponentType::TextSelected => &mut theme.text_selected,
+        ThemeComponentType::RibbonUnselected => &mut theme.ribbon_unselected,
+        ThemeComponentType::RibbonSelected => &mut theme.ribbon_selected,
+        ThemeComponentType::TableTitle => &mut theme.table_title,
+        ThemeComponentType::TableCellUnselected => &mut theme.table_cell_unselected,
+        ThemeComponentType::TableCellSelected => &mut theme.table_cell_selected,
+        ThemeComponentType::ListUnselected => &mut theme.list_unselected,
+        ThemeComponentType::ListSelected => &mut theme.list_selected,
+        ThemeComponentType::FrameUnselected => &mut theme.frame_unselected,
+        ThemeComponentType::FrameSelected => &mut theme.frame_selected,
+        ThemeComponentType::FrameHighlight => &mut theme.frame_highlight,
+        ThemeComponentType::ExitCodeSuccess => &mut theme.exit_code_success,
+        ThemeComponentType::ExitCodeError => &mut theme.exit_code_error,
+    }
+}
