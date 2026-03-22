@@ -110,13 +110,6 @@ impl ConfigManager {
         Ok(())
     }
 
-    pub fn get_config_dir(&self) -> &PathBuf {
-        &self.config_dir
-    }
-
-    pub fn get_themes_dir(&self) -> &PathBuf {
-        &self.themes_dir
-    }
 }
 
 impl Default for ConfigManager {

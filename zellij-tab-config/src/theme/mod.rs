@@ -177,6 +177,7 @@ pub enum ThemeComponentType {
 }
 
 impl ThemeComponentType {
+    #[allow(dead_code)]
     pub fn label(&self) -> &'static str {
         match self {
             Self::TextUnselected => "Text (Unselected)",
@@ -235,25 +236,3 @@ impl ThemeComponentType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ColorAttribute {
-    Base,
-    Background,
-    Emphasis0,
-    Emphasis1,
-    Emphasis2,
-    Emphasis3,
-}
-
-impl ColorAttribute {
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Base => "Base",
-            Self::Background => "Background",
-            Self::Emphasis0 => "Emphasis 0",
-            Self::Emphasis1 => "Emphasis 1",
-            Self::Emphasis2 => "Emphasis 2",
-            Self::Emphasis3 => "Emphasis 3",
-        }
-    }
-}

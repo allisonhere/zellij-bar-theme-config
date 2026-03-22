@@ -318,7 +318,7 @@ impl App {
         frame.render_widget(Paragraph::new(content).block(block), area);
     }
 
-    fn render_pane_highlight(&self, frame: &mut Frame, area: Rect, bg: Color, text_fg: Color) {
+    fn render_pane_highlight(&self, frame: &mut Frame, area: Rect, bg: Color, _text_fg: Color) {
         let t = &self.theme;
         let is_editing_frame = self.selected_element == PreviewElement::PaneHighlight;
 
@@ -458,7 +458,6 @@ impl App {
     fn render_zellij_status_bar(&self, frame: &mut Frame, area: Rect) {
         let t = &self.theme;
         let is_editing_status = self.selected_element == PreviewElement::StatusBar;
-        let bar_fg = get_fg(ThemeComponentType::TextUnselected, t);
         let bar_bg = get_bg(ThemeComponentType::TextUnselected, t);
         let sel_fg = get_fg(ThemeComponentType::RibbonSelected, t);
         let sel_bg = get_bg(ThemeComponentType::RibbonSelected, t);

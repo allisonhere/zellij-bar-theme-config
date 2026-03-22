@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-linux-x86_64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build --release --manifest-path zellij-tab-config/Cargo.toml
+
+      - name: Rename binary
+        run: cp zellij-tab-config/target/release/zellij-tab-config zellij-tab-config-linux-x86_64
+
+      - name: Upload release binary
+        uses: softprops/action-gh-release@v2
+        with:
+          files: zellij-tab-config-linux-x86_64
+          draft: false
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
