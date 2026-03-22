@@ -680,7 +680,7 @@ impl App {
     fn render_color_picker_overlay(&self, frame: &mut Frame) {
         let area = frame.area();
         let overlay_w = 52u16.min(area.width.saturating_sub(4));
-        let overlay_h = 20u16.min(area.height.saturating_sub(4));
+        let overlay_h = 22u16.min(area.height.saturating_sub(4));
         let overlay_x = area.width.saturating_sub(overlay_w + 2);
         let overlay_y = (area.height.saturating_sub(overlay_h)) / 2;
         let overlay_area = Rect::new(overlay_x, overlay_y, overlay_w, overlay_h);
@@ -770,6 +770,28 @@ impl App {
             )]));
         }
         lines.push(Line::from(""));
+
+        // Pill-style keybinding row matching the main status bar aesthetic
+        let overlay_bg = Color::Rgb(18, 18, 18);
+        let key_bg = Color::Rgb(60, 60, 90);
+        let key_fg = Color::White;
+        let act_fg = Color::Rgb(180, 180, 180);
+        let mut pill_spans: Vec<Span> = Vec::new();
+        let pill_hints: &[(&str, &str)] = &[
+            ("↑↓", "channel"),
+            ("←→", "±5"),
+            ("S+←→", "±1"),
+            ("#", "hex"),
+            ("tab", "fg/bg"),
+            ("↵", "keep"),
+            ("Esc", "cancel"),
+        ];
+        for (key, action) in pill_hints {
+            pill_spans.push(Span::styled("", Style::new().fg(key_bg).bg(overlay_bg)));
+            pill_spans.push(Span::styled(format!(" {} ", key), Style::new().fg(key_fg).bg(key_bg).add_modifier(Modifier::BOLD)));
+            pill_spans.push(Span::styled(format!(" {} ", action), Style::new().fg(act_fg).bg(overlay_bg)));
+        }
+        lines.push(Line::from(pill_spans));
 
         let block = Block::bordered()
             .border_type(BorderType::Rounded)
