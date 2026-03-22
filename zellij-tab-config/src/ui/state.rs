@@ -27,22 +27,34 @@ pub enum InputMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewAttribute {
-    Foreground,
+    Base,
     Background,
+    Emphasis0,
+    Emphasis1,
+    Emphasis2,
+    Emphasis3,
 }
 
 impl PreviewAttribute {
     pub fn label(&self) -> &'static str {
         match self {
-            Self::Foreground => "FG",
+            Self::Base => "BASE",
             Self::Background => "BG",
+            Self::Emphasis0 => "EM0",
+            Self::Emphasis1 => "EM1",
+            Self::Emphasis2 => "EM2",
+            Self::Emphasis3 => "EM3",
         }
     }
 
-    pub fn toggle(&mut self) {
+    pub fn cycle(&mut self) {
         *self = match self {
-            Self::Foreground => Self::Background,
-            Self::Background => Self::Foreground,
+            Self::Base => Self::Background,
+            Self::Background => Self::Emphasis0,
+            Self::Emphasis0 => Self::Emphasis1,
+            Self::Emphasis1 => Self::Emphasis2,
+            Self::Emphasis2 => Self::Emphasis3,
+            Self::Emphasis3 => Self::Base,
         };
     }
 }
@@ -284,7 +296,7 @@ impl Default for App {
         Self {
             theme: Theme::default(),
             selected_element: PreviewElement::TabSelected,
-            selected_attribute: PreviewAttribute::Foreground,
+            selected_attribute: PreviewAttribute::Base,
             config_manager: crate::config::ConfigManager::new(),
             message: None,
             input_mode: InputMode::Preview,
@@ -457,8 +469,12 @@ impl App {
     pub fn get_color_by_attr(&self, attr: PreviewAttribute) -> RgbColor {
         let component = self.theme.get(self.selected_element.component_type());
         match attr {
-            PreviewAttribute::Foreground => component.base,
+            PreviewAttribute::Base => component.base,
             PreviewAttribute::Background => component.background,
+            PreviewAttribute::Emphasis0 => component.emphasis_0,
+            PreviewAttribute::Emphasis1 => component.emphasis_1,
+            PreviewAttribute::Emphasis2 => component.emphasis_2,
+            PreviewAttribute::Emphasis3 => component.emphasis_3,
         }
     }
 
@@ -470,8 +486,12 @@ impl App {
         let comp_type = self.selected_element.component_type();
         let component = self.theme.get_mut(comp_type);
         match attr {
-            PreviewAttribute::Foreground => component.base = color,
+            PreviewAttribute::Base => component.base = color,
             PreviewAttribute::Background => component.background = color,
+            PreviewAttribute::Emphasis0 => component.emphasis_0 = color,
+            PreviewAttribute::Emphasis1 => component.emphasis_1 = color,
+            PreviewAttribute::Emphasis2 => component.emphasis_2 = color,
+            PreviewAttribute::Emphasis3 => component.emphasis_3 = color,
         }
         self.dirty = true;
     }
@@ -503,7 +523,7 @@ impl App {
     }
 
     pub fn switch_editing_attribute(&mut self) {
-        self.selected_attribute.toggle();
+        self.selected_attribute.cycle();
         let attr = self.selected_attribute;
         let color = self.get_color_by_attr(attr);
         self.color_editor = ColorEditor::from_rgb(color.r, color.g, color.b);

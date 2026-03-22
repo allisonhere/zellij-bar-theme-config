@@ -528,7 +528,7 @@ impl App {
                 ("S+←→",   "±1",      "±1"),
                 ("PgUp/Dn","±25",     "±25"),
                 ("#",      "HEX",     "HX"),
-                ("tab",    "FG/BG",   "F/B"),
+                ("tab",    "CYCLE ATTR", "ATTR"),
                 ("Enter",  "KEEP",    "OK"),
                 ("Esc",    "CANCEL",  "ESC"),
             ],
@@ -695,8 +695,12 @@ impl App {
         // Derive "before" color from saved original_component
         let orig_color = self.original_component.as_ref().map(|orig| {
             let c = match self.selected_attribute {
-                PreviewAttribute::Foreground => orig.base,
+                PreviewAttribute::Base => orig.base,
                 PreviewAttribute::Background => orig.background,
+                PreviewAttribute::Emphasis0 => orig.emphasis_0,
+                PreviewAttribute::Emphasis1 => orig.emphasis_1,
+                PreviewAttribute::Emphasis2 => orig.emphasis_2,
+                PreviewAttribute::Emphasis3 => orig.emphasis_3,
             };
             (
                 Color::Rgb(c.r, c.g, c.b),

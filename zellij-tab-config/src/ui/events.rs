@@ -27,7 +27,7 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
                 }
                 KeyCode::Tab => {
                     app.message = None;
-                    app.selected_attribute.toggle();
+                    app.selected_attribute.cycle();
                 }
                 KeyCode::Char('c') => {
                     app.message = None;
