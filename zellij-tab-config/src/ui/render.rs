@@ -680,7 +680,7 @@ impl App {
     fn render_color_picker_overlay(&self, frame: &mut Frame) {
         let area = frame.area();
         let overlay_w = 52u16.min(area.width.saturating_sub(4));
-        let overlay_h = 22u16.min(area.height.saturating_sub(4));
+        let overlay_h = 15u16.min(area.height.saturating_sub(4));
         let overlay_x = area.width.saturating_sub(overlay_w + 2);
         let overlay_y = (area.height.saturating_sub(overlay_h)) / 2;
         let overlay_area = Rect::new(overlay_x, overlay_y, overlay_w, overlay_h);
