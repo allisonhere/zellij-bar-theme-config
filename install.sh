@@ -23,7 +23,11 @@ if [ -n "$PREBUILT" ]; then
     printf "  [1] Download prebuilt binary (fast, Linux x86_64)\n"
     printf "  [2] Build from source      (requires cargo)\n"
     printf "\n  Choice [1]: "
-    read -r choice </dev/tty
+    if [ -t 0 ]; then
+        read -r choice
+    else
+        read -r choice </dev/tty 2>/dev/null || choice="1"
+    fi
     choice="${choice:-1}"
 else
     echo "  No prebuilt binary available for ${OS} ${ARCH}."
