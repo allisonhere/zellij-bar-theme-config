@@ -38,12 +38,12 @@ pub enum PreviewAttribute {
 impl PreviewAttribute {
     pub fn label(&self) -> &'static str {
         match self {
-            Self::Base => "BASE",
+            Self::Base => "FG",
             Self::Background => "BG",
-            Self::Emphasis0 => "EM0",
-            Self::Emphasis1 => "EM1",
-            Self::Emphasis2 => "EM2",
-            Self::Emphasis3 => "EM3",
+            Self::Emphasis0 => "Accent 1",
+            Self::Emphasis1 => "Accent 2",
+            Self::Emphasis2 => "Accent 3",
+            Self::Emphasis3 => "Accent 4",
         }
     }
 
