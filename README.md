@@ -15,19 +15,25 @@ A terminal UI for creating, editing, and applying [Zellij](https://zellij.dev) t
 
 ## Installation
 
-### One-line install
+### Prebuilt binary (Linux x86_64)
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/allisonhere/zellij-bar-theme-config/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/allisonhere/zellij-bar-theme-config/main/install-binary.sh | sh
 ```
 
-Installs to `~/.local/bin` by default. Override with `INSTALL_DIR`:
+### Build from source (all platforms)
+
+Requires `git` and `cargo` ([rustup.rs](https://rustup.rs)).
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/allisonhere/zellij-bar-theme-config/main/install.sh | INSTALL_DIR=/usr/local/bin sh
+curl -fsSL https://raw.githubusercontent.com/allisonhere/zellij-bar-theme-config/main/install-source.sh | sh
 ```
 
-On Linux x86_64, a prebuilt binary is downloaded automatically. On other platforms, it builds from source (requires `git` and `cargo` from [rustup.rs](https://rustup.rs)).
+Both scripts install to `~/.local/bin` by default. Override with `INSTALL_DIR`:
+
+```sh
+curl -fsSL ... | INSTALL_DIR=/usr/local/bin sh
+```
 
 ### Manual install
 
