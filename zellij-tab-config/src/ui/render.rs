@@ -275,7 +275,7 @@ impl App {
 
         let block = Block::bordered()
             .border_type(BorderType::Double)
-            .title(" bash ")
+            .title(" Pane (Selected) ")
             .title_style(border_style)
             .border_style(border_style)
             .style(Style::new().bg(pane_bg));
@@ -310,7 +310,7 @@ impl App {
 
         let block = Block::bordered()
             .border_type(BorderType::Plain)
-            .title(" terminal ")
+            .title(" Pane (Unselected) ")
             .title_style(border_style)
             .border_style(border_style)
             .style(Style::new().bg(pane_bg));
@@ -447,7 +447,7 @@ impl App {
 
         let block = Block::bordered()
             .border_type(BorderType::Thick)
-            .title(" nvim ")
+            .title(" Pane (Highlight) ")
             .title_style(border_style)
             .border_style(border_style)
             .style(Style::new().bg(pane_bg));
