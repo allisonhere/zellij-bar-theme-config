@@ -482,31 +482,101 @@ impl App {
 
         // ── helper: one ▶ content ▶ pill on unsel colors ─────────────────
         // Returns (open_arrow, key_span, action_span, close_arrow)
-        let pill = |key: &str, action: &str| -> [Span<'static>; 6] {
-            [
-                // key portion: sel_bg background
+        // pill_width: 1(open) + space+key+space + 1(trans) + space+action+space + 1(close) + 1(gap)
+        let pill_width = |key: &str, action: &str| -> usize {
+            1 + key.chars().count() + 2 + 1 + action.chars().count() + 2 + 1 + 1
+        };
+        // key_only_width: 1(open) + space+key+space + 1(close) + 1(gap)
+        let key_only_width = |key: &str| -> usize { 1 + key.chars().count() + 2 + 1 + 1 };
+
+        let pill_full = |key: &str, action: &str| -> Vec<Span<'static>> {
+            vec![
                 Span::styled("", Style::new().fg(sel_bg).bg(bar_bg)),
                 Span::styled(
                     format!(" {} ", key),
-                    Style::new()
-                        .fg(sel_fg)
-                        .bg(sel_bg)
-                        .add_modifier(Modifier::BOLD),
+                    Style::new().fg(sel_fg).bg(sel_bg).add_modifier(Modifier::BOLD),
                 ),
-                // transition from key bg to action bg
                 Span::styled("", Style::new().fg(unsel_bg).bg(sel_bg)),
-                // action portion: unsel_bg background
                 Span::styled(
                     format!(" {} ", action),
                     Style::new().fg(unsel_fg).bg(unsel_bg),
                 ),
                 Span::styled("", Style::new().fg(unsel_bg).bg(bar_bg)),
-                // empty placeholder to keep array size consistent
-                Span::raw(""),
+            ]
+        };
+
+        let pill_key_only = |key: &str| -> Vec<Span<'static>> {
+            vec![
+                Span::styled("", Style::new().fg(sel_bg).bg(bar_bg)),
+                Span::styled(
+                    format!(" {} ", key),
+                    Style::new().fg(sel_fg).bg(sel_bg).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("", Style::new().fg(sel_bg).bg(bar_bg)),
             ]
         };
 
         let gap = || Span::styled(" ", Style::new().bg(bar_bg));
+
+        // (key, long label, short label)
+        let bindings: &[(&str, &str, &str)] = match self.input_mode {
+            InputMode::Preview => &[
+                ("↑↓←→", "NAVIGATE", "NAV"),
+                ("c",    "COLOR",    "CLR"),
+                ("tab",  "FG/BG",    "F/B"),
+                ("s",    "SAVE AS",  "SAVE"),
+                ("l",    "LOAD",     "LD"),
+                ("a",    "SAVE+APPLY","APPLY"),
+                ("?",    "HELP",     "?"),
+                ("q",    "QUIT",     "QT"),
+            ],
+            InputMode::ColorPicker => &[
+                ("↑↓",     "CHANNEL", "CH"),
+                ("←→",     "±5",      "±5"),
+                ("S+←→",   "±1",      "±1"),
+                ("PgUp/Dn","±25",     "±25"),
+                ("#",      "HEX",     "HX"),
+                ("tab",    "FG/BG",   "F/B"),
+                ("Enter",  "KEEP",    "OK"),
+                ("Esc",    "CANCEL",  "ESC"),
+            ],
+            InputMode::ThemeNameInput | InputMode::ThemeNameInputApply => &[
+                ("type",  "NAME",   "NM"),
+                ("Enter", "SAVE",   "OK"),
+                ("Esc",   "CANCEL", "ESC"),
+            ],
+            InputMode::ThemeLoad => &[
+                ("↑↓",   "SELECT", "SEL"),
+                ("Enter","LOAD",   "LD"),
+                ("Esc",  "CANCEL", "ESC"),
+            ],
+            InputMode::Help => &[
+                ("Esc", "CLOSE", "X"),
+            ],
+        };
+
+        // ── Pick label level based on available width ─────────────────────
+        let mode_pill_w = 1 + mode_label.chars().count() + 1 + 1; // open+label+close+gap
+        let current_color = self.get_color_by_attr(self.selected_attribute);
+        let info = format!(
+            " {}{} │ {} {} #{:02x}{:02x}{:02x} ",
+            self.theme.name,
+            if self.dirty { "*" } else { "" },
+            self.selected_element.label(),
+            self.selected_attribute.label(),
+            current_color.r,
+            current_color.g,
+            current_color.b,
+        );
+        let right_w = info.len() + self.message.as_ref().map(|m| m.len() + 3).unwrap_or(0);
+        let available = (area.width as usize).saturating_sub(mode_pill_w + right_w);
+
+        let full_w: usize  = bindings.iter().map(|(k,l,_)| pill_width(k,l)).sum();
+        let short_w: usize = bindings.iter().map(|(k,_,s)| pill_width(k,s)).sum();
+
+        let level = if full_w <= available { 0 }
+                    else if short_w <= available { 1 }
+                    else { 2 };
 
         let mut spans: Vec<Span> = Vec::new();
 
@@ -514,52 +584,18 @@ impl App {
         spans.push(Span::styled("", Style::new().fg(mode_bg).bg(bar_bg)));
         spans.push(Span::styled(
             mode_label,
-            Style::new()
-                .fg(mode_fg)
-                .bg(mode_bg)
-                .add_modifier(Modifier::BOLD),
+            Style::new().fg(mode_fg).bg(mode_bg).add_modifier(Modifier::BOLD),
         ));
         spans.push(Span::styled("", Style::new().fg(mode_bg).bg(bar_bg)));
         spans.push(gap());
 
         // ── Keybinding pills ──────────────────────────────────────────────
-        let bindings: &[(&str, &str)] = match self.input_mode {
-            InputMode::Preview => &[
-                ("↑↓←→", "NAVIGATE"),
-                ("c", "COLOR"),
-                ("tab", "FG/BG"),
-                ("s", "SAVE AS"),
-                ("l", "LOAD"),
-                ("a", "SAVE+APPLY"),
-                ("?", "HELP"),
-                ("q", "QUIT"),
-            ],
-            InputMode::ColorPicker => &[
-                ("↑↓", "CHANNEL"),
-                ("←→", "±5"),
-                ("S+←→", "±1"),
-                ("PgUp/Dn", "±25"),
-                ("#", "HEX"),
-                ("tab", "FG/BG"),
-                ("Enter", "KEEP"),
-                ("Esc", "CANCEL"),
-            ],
-            InputMode::ThemeNameInput | InputMode::ThemeNameInputApply => &[
-                ("type", "NAME"),
-                ("Enter", "SAVE"),
-                ("Esc", "CANCEL"),
-            ],
-            InputMode::ThemeLoad => &[
-                ("↑↓", "SELECT"),
-                ("Enter", "LOAD"),
-                ("Esc", "CANCEL"),
-            ],
-            InputMode::Help => &[
-                ("Esc", "CLOSE"),
-            ],
-        };
-        for (key, action) in bindings {
-            spans.extend(pill(key, action));
+        for (key, long, short) in bindings {
+            match level {
+                0 => spans.extend(pill_full(key, long)),
+                1 => spans.extend(pill_full(key, short)),
+                _ => spans.extend(pill_key_only(key)),
+            }
             spans.push(gap());
         }
 
@@ -577,8 +613,7 @@ impl App {
         );
 
         let used: usize = spans.iter().map(|s| s.width()).sum();
-        let right_width = info.len() + self.message.as_ref().map(|m| m.len() + 3).unwrap_or(0);
-        let fill = (area.width as usize).saturating_sub(used + right_width);
+        let fill = (area.width as usize).saturating_sub(used + right_w);
         spans.push(Span::styled(" ".repeat(fill), Style::new().bg(bar_bg)));
 
         if let Some(ref msg) = self.message {
