@@ -936,30 +936,60 @@ impl App {
     }
 
     fn render_theme_load_overlay(&self, frame: &mut Frame) {
-        let height = (self.loadable_themes.len() as u16 + 6).clamp(8, 18);
+        let height = (self.loadable_themes.len() as u16 + 8).clamp(10, 28);
         let area = centered_rect(frame.area(), 56, height);
         frame.render_widget(Clear, area);
 
-        let mut lines = vec![Line::from(" Load saved theme "), Line::from("")];
-        for (index, name) in self.loadable_themes.iter().enumerate() {
+        let mut lines = vec![Line::from(" Load theme "), Line::from("")];
+
+        let has_user = self.loadable_themes.iter().any(|e| !e.is_builtin());
+        let has_builtin = self.loadable_themes.iter().any(|e| e.is_builtin());
+        let _ = has_builtin;
+
+        if has_user {
+            lines.push(Line::from(Span::styled(
+                " ── Saved ───────────────────────────",
+                Style::new().fg(Color::DarkGray),
+            )));
+        }
+
+        let mut showed_builtin_header = false;
+        for (index, entry) in self.loadable_themes.iter().enumerate() {
+            if entry.is_builtin() && !showed_builtin_header {
+                showed_builtin_header = true;
+                if has_user { lines.push(Line::from("")); }
+                lines.push(Line::from(Span::styled(
+                    " ── Built-in ────────────────────────",
+                    Style::new().fg(Color::DarkGray),
+                )));
+            }
             let selected = index == self.selected_theme_index;
             let prefix = if selected { " > " } else { "   " };
             let style = if selected {
                 Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else if entry.is_builtin() {
+                Style::new().fg(Color::Rgb(150, 150, 180))
             } else {
                 Style::new().fg(Color::White)
             };
-            lines.push(Line::from(Span::styled(format!("{prefix}{name}"), style)));
+            lines.push(Line::from(Span::styled(
+                format!("{}{}", prefix, entry.name()),
+                style,
+            )));
         }
+
+        if self.loadable_themes.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "   (no themes found)",
+                Style::new().fg(Color::DarkGray),
+            )));
+        }
+
         lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            " Up/Down: select  Enter: load  Esc: cancel",
-            Style::new().fg(Color::DarkGray),
-        )));
 
         let block = Block::bordered()
             .border_type(BorderType::Rounded)
-            .title(" Theme Loader ")
+            .title(" Load Theme ")
             .title_style(Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD))
             .border_style(Style::new().fg(Color::Yellow))
             .style(Style::new().bg(Color::Rgb(18, 18, 18)));

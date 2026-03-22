@@ -1,5 +1,23 @@
 use crate::theme::{RgbColor, Theme, ThemeComponent, ThemeComponentType};
 
+#[derive(Debug, Clone)]
+pub enum ThemeEntry {
+    User(String),
+    Builtin(&'static str),
+}
+
+impl ThemeEntry {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::User(n) => n.as_str(),
+            Self::Builtin(n) => n,
+        }
+    }
+    pub fn is_builtin(&self) -> bool {
+        matches!(self, Self::Builtin(_))
+    }
+}
+
 pub struct App {
     pub theme: Theme,
     pub selected_element: PreviewElement,
@@ -10,7 +28,7 @@ pub struct App {
     pub color_editor: ColorEditor,
     pub original_component: Option<ThemeComponent>,
     pub theme_name_input: String,
-    pub loadable_themes: Vec<String>,
+    pub loadable_themes: Vec<ThemeEntry>,
     pub selected_theme_index: usize,
     pub dirty: bool,
 }
@@ -357,30 +375,36 @@ impl App {
 
     pub fn open_theme_load_dialog(&mut self) {
         self.refresh_theme_list();
-        if self.loadable_themes.is_empty() {
-            self.message = Some(String::from(
-                "✗ No saved themes found in ~/.config/zellij/themes",
-            ));
-            return;
-        }
-
         self.selected_theme_index = self
             .loadable_themes
             .iter()
-            .position(|name| name == &self.theme.name)
+            .position(|e| e.name() == self.theme.name)
             .unwrap_or(0);
         self.input_mode = InputMode::ThemeLoad;
         self.message = Some(String::from("Select a theme to load"));
     }
 
     pub fn load_selected_theme(&mut self) {
-        let Some(name) = self.loadable_themes.get(self.selected_theme_index).cloned() else {
+        let Some(entry) = self.loadable_themes.get(self.selected_theme_index).cloned() else {
             self.message = Some(String::from("✗ No theme selected"));
             self.input_mode = InputMode::Preview;
             return;
         };
 
-        match self.config_manager.load_theme(&name) {
+        let name = entry.name().to_string();
+        let result = match &entry {
+            ThemeEntry::User(n) => self.config_manager.load_theme(n),
+            ThemeEntry::Builtin(n) => {
+                let kdl = crate::bundled_themes::THEMES
+                    .iter()
+                    .find(|(k, _)| k == n)
+                    .map(|(_, v)| *v)
+                    .unwrap_or("");
+                crate::config::parse_theme_kdl(kdl, n)
+            }
+        };
+
+        match result {
             Ok(theme) => {
                 self.theme = theme;
                 self.sync_theme_name_input();
@@ -409,19 +433,26 @@ impl App {
     }
 
     pub fn refresh_theme_list(&mut self) {
-        match self.config_manager.list_themes() {
-            Ok(mut themes) => {
-                themes.sort();
-                self.loadable_themes = themes;
-                if self.selected_theme_index >= self.loadable_themes.len() {
-                    self.selected_theme_index = self.loadable_themes.len().saturating_sub(1);
-                }
+        let user_themes: Vec<ThemeEntry> = match self.config_manager.list_themes() {
+            Ok(mut names) => {
+                names.sort();
+                names.into_iter().map(ThemeEntry::User).collect()
             }
             Err(e) => {
-                self.loadable_themes.clear();
-                self.selected_theme_index = 0;
-                self.message = Some(format!("✗ Error: {}", e));
+                self.message = Some(format!("✗ Error listing themes: {}", e));
+                Vec::new()
             }
+        };
+
+        let builtin_themes: Vec<ThemeEntry> = crate::bundled_themes::THEMES
+            .iter()
+            .map(|(name, _)| ThemeEntry::Builtin(name))
+            .collect();
+
+        self.loadable_themes = user_themes.into_iter().chain(builtin_themes).collect();
+
+        if self.selected_theme_index >= self.loadable_themes.len() {
+            self.selected_theme_index = self.loadable_themes.len().saturating_sub(1);
         }
     }
 

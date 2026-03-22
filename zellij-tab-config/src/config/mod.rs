@@ -118,7 +118,7 @@ impl Default for ConfigManager {
     }
 }
 
-fn parse_theme_kdl(content: &str, name: &str) -> Result<Theme, ConfigError> {
+pub fn parse_theme_kdl(content: &str, name: &str) -> Result<Theme, ConfigError> {
     let doc: kdl::KdlDocument = content
         .parse()
         .map_err(|e: kdl::KdlError| ConfigError::KdlParse(e.to_string()))?;
