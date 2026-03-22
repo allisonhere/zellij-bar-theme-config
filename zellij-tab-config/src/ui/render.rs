@@ -482,21 +482,27 @@ impl App {
 
         // ── helper: one ▶ content ▶ pill on unsel colors ─────────────────
         // Returns (open_arrow, key_span, action_span, close_arrow)
-        let pill = |key: &str, action: &str| -> [Span<'static>; 4] {
+        let pill = |key: &str, action: &str| -> [Span<'static>; 6] {
             [
-                Span::styled("", Style::new().fg(unsel_bg).bg(bar_bg)),
+                // key portion: sel_bg background
+                Span::styled("", Style::new().fg(sel_bg).bg(bar_bg)),
                 Span::styled(
                     format!(" {} ", key),
                     Style::new()
                         .fg(sel_fg)
-                        .bg(unsel_bg)
+                        .bg(sel_bg)
                         .add_modifier(Modifier::BOLD),
                 ),
+                // transition from key bg to action bg
+                Span::styled("", Style::new().fg(unsel_bg).bg(sel_bg)),
+                // action portion: unsel_bg background
                 Span::styled(
-                    format!("{} ", action),
+                    format!(" {} ", action),
                     Style::new().fg(unsel_fg).bg(unsel_bg),
                 ),
                 Span::styled("", Style::new().fg(unsel_bg).bg(bar_bg)),
+                // empty placeholder to keep array size consistent
+                Span::raw(""),
             ]
         };
 
