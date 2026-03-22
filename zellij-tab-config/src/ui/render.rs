@@ -771,16 +771,6 @@ impl App {
         }
         lines.push(Line::from(""));
 
-        // Keybinding hints
-        lines.push(Line::from(vec![Span::styled(
-            " ↑↓:channel  ←→:±5  Shift+←→:±1  PgUp/Dn:±25",
-            Style::new().fg(Color::DarkGray),
-        )]));
-        lines.push(Line::from(vec![Span::styled(
-            " tab:fg/bg  Enter:keep  Esc:cancel",
-            Style::new().fg(Color::DarkGray),
-        )]));
-
         let block = Block::bordered()
             .border_type(BorderType::Rounded)
             .title(format!(" {} — {} ", element_name, attr_name))
