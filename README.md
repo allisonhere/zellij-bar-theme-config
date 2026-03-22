@@ -14,23 +14,27 @@ A terminal UI for creating, editing, and applying [Zellij](https://zellij.dev) t
 
 ## Installation
 
+### One-line install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/allisonhere/zellij-bar-theme-config/main/install.sh | sh
+```
+
+Installs to `~/.local/bin` by default. Override with `INSTALL_DIR`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/allisonhere/zellij-bar-theme-config/main/install.sh | INSTALL_DIR=/usr/local/bin sh
+```
+
+Requires `git` and `cargo` ([rustup.rs](https://rustup.rs)).
+
+### Manual install
+
 ```sh
 git clone https://github.com/allisonhere/zellij-bar-theme-config.git
 cd zellij-bar-theme-config/zellij-tab-config
 cargo build --release
-```
-
-Then run it:
-
-```sh
-./target/release/zellij-tab-config
-```
-
-Or install it to your Cargo bin:
-
-```sh
-cargo install --path .
-zellij-tab-config
+cp target/release/zellij-tab-config ~/.local/bin/
 ```
 
 ## Usage
