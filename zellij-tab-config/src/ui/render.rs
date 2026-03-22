@@ -936,18 +936,21 @@ impl App {
     }
 
     fn render_theme_load_overlay(&self, frame: &mut Frame) {
-        let height = (self.loadable_themes.len() as u16 + 8).clamp(10, 28);
-        let area = centered_rect(frame.area(), 56, height);
+        let overlay_h = 24u16.min(frame.area().height.saturating_sub(4));
+        let area = centered_rect(frame.area(), 56, overlay_h);
         frame.render_widget(Clear, area);
 
-        let mut lines = vec![Line::from(" Load theme "), Line::from("")];
+        // inner height available for scrollable content (subtract 2 for borders)
+        let viewport = overlay_h.saturating_sub(2) as usize;
 
         let has_user = self.loadable_themes.iter().any(|e| !e.is_builtin());
-        let has_builtin = self.loadable_themes.iter().any(|e| e.is_builtin());
-        let _ = has_builtin;
+
+        // Build all content lines and record line index of each theme entry
+        let mut all_lines: Vec<Line> = Vec::new();
+        let mut entry_lines: Vec<usize> = Vec::new(); // line index per theme entry
 
         if has_user {
-            lines.push(Line::from(Span::styled(
+            all_lines.push(Line::from(Span::styled(
                 " ── Saved ───────────────────────────",
                 Style::new().fg(Color::DarkGray),
             )));
@@ -957,12 +960,13 @@ impl App {
         for (index, entry) in self.loadable_themes.iter().enumerate() {
             if entry.is_builtin() && !showed_builtin_header {
                 showed_builtin_header = true;
-                if has_user { lines.push(Line::from("")); }
-                lines.push(Line::from(Span::styled(
+                if has_user { all_lines.push(Line::from("")); }
+                all_lines.push(Line::from(Span::styled(
                     " ── Built-in ────────────────────────",
                     Style::new().fg(Color::DarkGray),
                 )));
             }
+            entry_lines.push(all_lines.len());
             let selected = index == self.selected_theme_index;
             let prefix = if selected { " > " } else { "   " };
             let style = if selected {
@@ -972,31 +976,47 @@ impl App {
             } else {
                 Style::new().fg(Color::White)
             };
-            lines.push(Line::from(Span::styled(
+            all_lines.push(Line::from(Span::styled(
                 format!("{}{}", prefix, entry.name()),
                 style,
             )));
         }
 
         if self.loadable_themes.is_empty() {
-            lines.push(Line::from(Span::styled(
+            all_lines.push(Line::from(Span::styled(
                 "   (no themes found)",
                 Style::new().fg(Color::DarkGray),
             )));
         }
 
-        lines.push(Line::from(""));
+        // Compute scroll offset to keep selected item in view
+        let selected_line = entry_lines.get(self.selected_theme_index).copied().unwrap_or(0);
+        let total = all_lines.len();
+        let scroll = if total <= viewport {
+            0
+        } else {
+            let half = viewport / 2;
+            selected_line.saturating_sub(half).min(total - viewport)
+        };
+
+        // Scroll indicator in title
+        let indicator = if total > viewport {
+            format!(" Load Theme  {}/{} ", self.selected_theme_index + 1, self.loadable_themes.len())
+        } else {
+            " Load Theme ".to_string()
+        };
 
         let block = Block::bordered()
             .border_type(BorderType::Rounded)
-            .title(" Load Theme ")
+            .title(indicator)
             .title_style(Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD))
             .border_style(Style::new().fg(Color::Yellow))
             .style(Style::new().bg(Color::Rgb(18, 18, 18)));
 
         frame.render_widget(
-            Paragraph::new(lines)
+            Paragraph::new(all_lines)
                 .block(block)
+                .scroll((scroll as u16, 0))
                 .style(Style::new().bg(Color::Rgb(18, 18, 18))),
             area,
         );
