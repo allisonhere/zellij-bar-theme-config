@@ -1,4 +1,5 @@
 use crate::theme::{RgbColor, Theme, ThemeComponent, ThemeComponentType};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -180,7 +181,7 @@ fn parse_theme_kdl(content: &str, name: &str) -> Result<Theme, ConfigError> {
         };
 
         let component = parse_component(child);
-        set_component(&mut theme, component_type, component);
+        *theme.get_mut(component_type) = component;
     }
 
     Ok(theme)
@@ -207,7 +208,7 @@ fn theme_from_palette(nodes: &[kdl::KdlNode], name: &str) -> Theme {
     let green   = parse_palette_color(nodes, "green")  .unwrap_or(RgbColor::new(80, 200, 80));
     let yellow  = parse_palette_color(nodes, "yellow") .unwrap_or(RgbColor::new(220, 190, 100));
     let blue    = parse_palette_color(nodes, "blue")   .unwrap_or(RgbColor::new(80, 130, 210));
-    let magenta = parse_palette_color(nodes, "magenta").unwrap_or(RgbColor::new(180, 100, 200));
+    let _magenta = parse_palette_color(nodes, "magenta").unwrap_or(RgbColor::new(180, 100, 200));
     let orange  = parse_palette_color(nodes, "orange") .unwrap_or(yellow);
 
     // A slightly lighter bg for "selected" backgrounds
@@ -226,22 +227,25 @@ fn theme_from_palette(nodes: &[kdl::KdlNode], name: &str) -> Theme {
         emphasis_3: black,
     };
 
+    let mut components = HashMap::new();
+    components.insert(ThemeComponentType::TextUnselected,       mk(fg,      bg));
+    components.insert(ThemeComponentType::TextSelected,         mk(white,   bg_sel));
+    components.insert(ThemeComponentType::RibbonUnselected,     mk(fg,      bg));
+    components.insert(ThemeComponentType::RibbonSelected,       mk(bg,      blue));
+    components.insert(ThemeComponentType::TableTitle,           mk(blue,    bg));
+    components.insert(ThemeComponentType::TableCellUnselected,  mk(fg,      bg));
+    components.insert(ThemeComponentType::TableCellSelected,    mk(white,   bg_sel));
+    components.insert(ThemeComponentType::ListUnselected,       mk(fg,      bg));
+    components.insert(ThemeComponentType::ListSelected,         mk(white,   blue));
+    components.insert(ThemeComponentType::FrameUnselected,      mk(black,   bg));
+    components.insert(ThemeComponentType::FrameSelected,        mk(blue,    bg));
+    components.insert(ThemeComponentType::FrameHighlight,       mk(orange,  bg));
+    components.insert(ThemeComponentType::ExitCodeSuccess,      mk(green,   bg));
+    components.insert(ThemeComponentType::ExitCodeError,        mk(red,     bg));
+
     Theme {
         name: name.to_string(),
-        text_unselected:       mk(fg,      bg),
-        text_selected:         mk(white,   bg_sel),
-        ribbon_unselected:     mk(fg,      bg),
-        ribbon_selected:       mk(bg,      blue),
-        table_title:           mk(blue,    bg),
-        table_cell_unselected: mk(fg,      bg),
-        table_cell_selected:   mk(white,   bg_sel),
-        list_unselected:       mk(fg,      bg),
-        list_selected:         mk(white,   blue),
-        frame_unselected:      mk(black,   bg),
-        frame_selected:        mk(blue,    bg),
-        frame_highlight:       mk(orange,  bg),
-        exit_code_success:     mk(green,   bg),
-        exit_code_error:       mk(red,     bg),
+        components,
     }
 }
 
@@ -277,32 +281,13 @@ fn parse_component(node: &kdl::KdlNode) -> ThemeComponent {
     component
 }
 
-fn set_component(theme: &mut Theme, component_type: ThemeComponentType, component: ThemeComponent) {
-    match component_type {
-        ThemeComponentType::TextUnselected => theme.text_unselected = component,
-        ThemeComponentType::TextSelected => theme.text_selected = component,
-        ThemeComponentType::RibbonUnselected => theme.ribbon_unselected = component,
-        ThemeComponentType::RibbonSelected => theme.ribbon_selected = component,
-        ThemeComponentType::TableTitle => theme.table_title = component,
-        ThemeComponentType::TableCellUnselected => theme.table_cell_unselected = component,
-        ThemeComponentType::TableCellSelected => theme.table_cell_selected = component,
-        ThemeComponentType::ListUnselected => theme.list_unselected = component,
-        ThemeComponentType::ListSelected => theme.list_selected = component,
-        ThemeComponentType::FrameUnselected => theme.frame_unselected = component,
-        ThemeComponentType::FrameSelected => theme.frame_selected = component,
-        ThemeComponentType::FrameHighlight => theme.frame_highlight = component,
-        ThemeComponentType::ExitCodeSuccess => theme.exit_code_success = component,
-        ThemeComponentType::ExitCodeError => theme.exit_code_error = component,
-    }
-}
-
 fn theme_to_kdl(theme: &Theme) -> String {
     let mut output = String::new();
     output.push_str("themes {\n");
     output.push_str(&format!("    {} {{\n", theme.name));
 
     for component_type in ThemeComponentType::all() {
-        let component = get_component(theme, *component_type);
+        let component = theme.get(*component_type);
         output.push_str(&format!("        {} {{\n", component_type.component_key()));
         output.push_str(&format!(
             "            base {} {} {}\n",
@@ -334,45 +319,4 @@ fn theme_to_kdl(theme: &Theme) -> String {
     output.push_str("    }\n");
     output.push_str("}\n");
     output
-}
-
-fn get_component<'a>(theme: &'a Theme, component_type: ThemeComponentType) -> &'a ThemeComponent {
-    match component_type {
-        ThemeComponentType::TextUnselected => &theme.text_unselected,
-        ThemeComponentType::TextSelected => &theme.text_selected,
-        ThemeComponentType::RibbonUnselected => &theme.ribbon_unselected,
-        ThemeComponentType::RibbonSelected => &theme.ribbon_selected,
-        ThemeComponentType::TableTitle => &theme.table_title,
-        ThemeComponentType::TableCellUnselected => &theme.table_cell_unselected,
-        ThemeComponentType::TableCellSelected => &theme.table_cell_selected,
-        ThemeComponentType::ListUnselected => &theme.list_unselected,
-        ThemeComponentType::ListSelected => &theme.list_selected,
-        ThemeComponentType::FrameUnselected => &theme.frame_unselected,
-        ThemeComponentType::FrameSelected => &theme.frame_selected,
-        ThemeComponentType::FrameHighlight => &theme.frame_highlight,
-        ThemeComponentType::ExitCodeSuccess => &theme.exit_code_success,
-        ThemeComponentType::ExitCodeError => &theme.exit_code_error,
-    }
-}
-
-pub fn get_component_mut(
-    theme: &mut Theme,
-    component_type: ThemeComponentType,
-) -> &mut ThemeComponent {
-    match component_type {
-        ThemeComponentType::TextUnselected => &mut theme.text_unselected,
-        ThemeComponentType::TextSelected => &mut theme.text_selected,
-        ThemeComponentType::RibbonUnselected => &mut theme.ribbon_unselected,
-        ThemeComponentType::RibbonSelected => &mut theme.ribbon_selected,
-        ThemeComponentType::TableTitle => &mut theme.table_title,
-        ThemeComponentType::TableCellUnselected => &mut theme.table_cell_unselected,
-        ThemeComponentType::TableCellSelected => &mut theme.table_cell_selected,
-        ThemeComponentType::ListUnselected => &mut theme.list_unselected,
-        ThemeComponentType::ListSelected => &mut theme.list_selected,
-        ThemeComponentType::FrameUnselected => &mut theme.frame_unselected,
-        ThemeComponentType::FrameSelected => &mut theme.frame_selected,
-        ThemeComponentType::FrameHighlight => &mut theme.frame_highlight,
-        ThemeComponentType::ExitCodeSuccess => &mut theme.exit_code_success,
-        ThemeComponentType::ExitCodeError => &mut theme.exit_code_error,
-    }
 }

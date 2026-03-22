@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct RgbColor {
@@ -76,87 +77,88 @@ impl ThemeComponent {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Theme {
     pub name: String,
-    pub text_unselected: ThemeComponent,
-    pub text_selected: ThemeComponent,
-    pub ribbon_unselected: ThemeComponent,
-    pub ribbon_selected: ThemeComponent,
-    pub table_title: ThemeComponent,
-    pub table_cell_unselected: ThemeComponent,
-    pub table_cell_selected: ThemeComponent,
-    pub list_unselected: ThemeComponent,
-    pub list_selected: ThemeComponent,
-    pub frame_unselected: ThemeComponent,
-    pub frame_selected: ThemeComponent,
-    pub frame_highlight: ThemeComponent,
-    pub exit_code_success: ThemeComponent,
-    pub exit_code_error: ThemeComponent,
+    pub components: HashMap<ThemeComponentType, ThemeComponent>,
+}
+
+impl Theme {
+    pub fn get(&self, t: ThemeComponentType) -> &ThemeComponent {
+        self.components
+            .get(&t)
+            .unwrap_or_else(|| panic!("missing component {:?}", t))
+    }
+
+    pub fn get_mut(&mut self, t: ThemeComponentType) -> &mut ThemeComponent {
+        self.components.entry(t).or_insert_with(ThemeComponent::default)
+    }
 }
 
 impl Default for Theme {
     fn default() -> Self {
+        let mut components = HashMap::new();
+        components.insert(
+            ThemeComponentType::TextUnselected,
+            ThemeComponent::new(RgbColor::new(200, 200, 200), RgbColor::new(30, 30, 30)),
+        );
+        components.insert(
+            ThemeComponentType::TextSelected,
+            ThemeComponent::new(RgbColor::new(255, 255, 255), RgbColor::new(60, 60, 60)),
+        );
+        components.insert(
+            ThemeComponentType::RibbonUnselected,
+            ThemeComponent::new(RgbColor::new(180, 180, 180), RgbColor::new(40, 40, 40)),
+        );
+        components.insert(
+            ThemeComponentType::RibbonSelected,
+            ThemeComponent::new(RgbColor::new(255, 255, 255), RgbColor::new(80, 80, 80)),
+        );
+        components.insert(
+            ThemeComponentType::TableTitle,
+            ThemeComponent::new(RgbColor::new(200, 200, 200), RgbColor::new(50, 50, 50)),
+        );
+        components.insert(
+            ThemeComponentType::TableCellUnselected,
+            ThemeComponent::new(RgbColor::new(180, 180, 180), RgbColor::new(35, 35, 35)),
+        );
+        components.insert(
+            ThemeComponentType::TableCellSelected,
+            ThemeComponent::new(RgbColor::new(255, 255, 255), RgbColor::new(60, 60, 60)),
+        );
+        components.insert(
+            ThemeComponentType::ListUnselected,
+            ThemeComponent::new(RgbColor::new(180, 180, 180), RgbColor::new(30, 30, 30)),
+        );
+        components.insert(
+            ThemeComponentType::ListSelected,
+            ThemeComponent::new(RgbColor::new(255, 255, 255), RgbColor::new(70, 70, 70)),
+        );
+        components.insert(
+            ThemeComponentType::FrameUnselected,
+            ThemeComponent::new(RgbColor::new(100, 100, 100), RgbColor::new(30, 30, 30)),
+        );
+        components.insert(
+            ThemeComponentType::FrameSelected,
+            ThemeComponent::new(RgbColor::new(255, 255, 255), RgbColor::new(50, 50, 50)),
+        );
+        components.insert(
+            ThemeComponentType::FrameHighlight,
+            ThemeComponent::new(RgbColor::new(255, 200, 100), RgbColor::new(60, 50, 30)),
+        );
+        components.insert(
+            ThemeComponentType::ExitCodeSuccess,
+            ThemeComponent::new(RgbColor::new(100, 255, 100), RgbColor::new(30, 30, 30)),
+        );
+        components.insert(
+            ThemeComponentType::ExitCodeError,
+            ThemeComponent::new(RgbColor::new(255, 100, 100), RgbColor::new(30, 30, 30)),
+        );
         Self {
             name: String::from("default"),
-            text_unselected: ThemeComponent::new(
-                RgbColor::new(200, 200, 200),
-                RgbColor::new(30, 30, 30),
-            ),
-            text_selected: ThemeComponent::new(
-                RgbColor::new(255, 255, 255),
-                RgbColor::new(60, 60, 60),
-            ),
-            ribbon_unselected: ThemeComponent::new(
-                RgbColor::new(180, 180, 180),
-                RgbColor::new(40, 40, 40),
-            ),
-            ribbon_selected: ThemeComponent::new(
-                RgbColor::new(255, 255, 255),
-                RgbColor::new(80, 80, 80),
-            ),
-            table_title: ThemeComponent::new(
-                RgbColor::new(200, 200, 200),
-                RgbColor::new(50, 50, 50),
-            ),
-            table_cell_unselected: ThemeComponent::new(
-                RgbColor::new(180, 180, 180),
-                RgbColor::new(35, 35, 35),
-            ),
-            table_cell_selected: ThemeComponent::new(
-                RgbColor::new(255, 255, 255),
-                RgbColor::new(60, 60, 60),
-            ),
-            list_unselected: ThemeComponent::new(
-                RgbColor::new(180, 180, 180),
-                RgbColor::new(30, 30, 30),
-            ),
-            list_selected: ThemeComponent::new(
-                RgbColor::new(255, 255, 255),
-                RgbColor::new(70, 70, 70),
-            ),
-            frame_unselected: ThemeComponent::new(
-                RgbColor::new(100, 100, 100),
-                RgbColor::new(30, 30, 30),
-            ),
-            frame_selected: ThemeComponent::new(
-                RgbColor::new(255, 255, 255),
-                RgbColor::new(50, 50, 50),
-            ),
-            frame_highlight: ThemeComponent::new(
-                RgbColor::new(255, 200, 100),
-                RgbColor::new(60, 50, 30),
-            ),
-            exit_code_success: ThemeComponent::new(
-                RgbColor::new(100, 255, 100),
-                RgbColor::new(30, 30, 30),
-            ),
-            exit_code_error: ThemeComponent::new(
-                RgbColor::new(255, 100, 100),
-                RgbColor::new(30, 30, 30),
-            ),
+            components,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ThemeComponentType {
     TextUnselected,
     TextSelected,
