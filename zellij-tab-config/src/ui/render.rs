@@ -568,7 +568,7 @@ impl App {
             current_color.g,
             current_color.b,
         );
-        let right_w = info.len() + self.message.as_ref().map(|m| m.len() + 3).unwrap_or(0);
+        let right_w = info.chars().count() + self.message.as_ref().map(|m| m.chars().count() + 3).unwrap_or(0);
         let available = (area.width as usize).saturating_sub(mode_pill_w + right_w);
 
         let full_w: usize  = bindings.iter().map(|(k,l,_)| pill_width(k,l)).sum();
