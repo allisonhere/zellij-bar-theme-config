@@ -93,7 +93,9 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
                 }
             }
             KeyCode::Tab => {
-                app.switch_editing_attribute();
+                if !app.selected_element.is_frame() {
+                    app.switch_editing_attribute();
+                }
             }
             KeyCode::Char('#') => {
                 app.color_editor.start_hex_input();

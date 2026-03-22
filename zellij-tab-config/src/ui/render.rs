@@ -522,16 +522,28 @@ impl App {
                 ("?",    "HELP",       "?"),
                 ("q",    "QUIT",       "QT"),
             ],
-            InputMode::ColorPicker => &[
-                ("↑↓",     "CHANNEL", "CH"),
-                ("←→",     "±5",      "±5"),
-                ("S+←→",   "±1",      "±1"),
-                ("PgUp/Dn","±25",     "±25"),
-                ("#",      "HEX",     "HX"),
-                ("tab",    "FG/BG",   "F/B"),
-                ("Enter",  "KEEP",    "OK"),
-                ("Esc",    "CANCEL",  "ESC"),
-            ],
+            InputMode::ColorPicker => {
+                const WITH_TAB: &[(&str, &str, &str)] = &[
+                    ("↑↓",     "CHANNEL", "CH"),
+                    ("←→",     "±5",      "±5"),
+                    ("S+←→",   "±1",      "±1"),
+                    ("PgUp/Dn","±25",     "±25"),
+                    ("#",      "HEX",     "HX"),
+                    ("tab",    "FG/BG",   "F/B"),
+                    ("Enter",  "KEEP",    "OK"),
+                    ("Esc",    "CANCEL",  "ESC"),
+                ];
+                const WITHOUT_TAB: &[(&str, &str, &str)] = &[
+                    ("↑↓",     "CHANNEL", "CH"),
+                    ("←→",     "±5",      "±5"),
+                    ("S+←→",   "±1",      "±1"),
+                    ("PgUp/Dn","±25",     "±25"),
+                    ("#",      "HEX",     "HX"),
+                    ("Enter",  "KEEP",    "OK"),
+                    ("Esc",    "CANCEL",  "ESC"),
+                ];
+                if self.selected_element.is_frame() { WITHOUT_TAB } else { WITH_TAB }
+            }
             InputMode::ThemeNameInput | InputMode::ThemeNameInputApply => &[
                 ("type",  "NAME",   "NM"),
                 ("Enter", "SAVE",   "OK"),
@@ -776,15 +788,15 @@ impl App {
         let key_fg = Color::White;
         let act_fg = Color::Rgb(180, 180, 180);
         let mut pill_spans: Vec<Span> = Vec::new();
-        let pill_hints: &[(&str, &str)] = &[
-            ("↑↓", "channel"),
-            ("←→", "±5"),
-            ("S+←→", "±1"),
-            ("#", "hex"),
-            ("tab", "fg/bg"),
-            ("↵", "keep"),
-            ("Esc", "cancel"),
+        const HINTS_WITH_TAB: &[(&str, &str)] = &[
+            ("↑↓", "channel"), ("←→", "±5"), ("S+←→", "±1"),
+            ("#", "hex"), ("tab", "fg/bg"), ("↵", "keep"), ("Esc", "cancel"),
         ];
+        const HINTS_NO_TAB: &[(&str, &str)] = &[
+            ("↑↓", "channel"), ("←→", "±5"), ("S+←→", "±1"),
+            ("#", "hex"), ("↵", "keep"), ("Esc", "cancel"),
+        ];
+        let pill_hints: &[(&str, &str)] = if self.selected_element.is_frame() { HINTS_NO_TAB } else { HINTS_WITH_TAB };
         for (key, action) in pill_hints {
             pill_spans.push(Span::styled("", Style::new().fg(key_bg).bg(overlay_bg)));
             pill_spans.push(Span::styled(format!(" {} ", key), Style::new().fg(key_fg).bg(key_bg).add_modifier(Modifier::BOLD)));
