@@ -874,7 +874,7 @@ impl App {
         let entries: &[(&str, &str)] = &[
             // Normal mode
             ("↑/j  ↓/k  ← →",  "Navigate preview elements"),
-            ("Tab",             "Toggle FG / BG (not available on pane borders)"),
+            ("Tab",             "Toggle FG / BG (pane borders: FG only)"),
             ("c",               "Open color picker for selected color"),
             ("s",               "Save theme as… (prompts for name)"),
             ("l",               "Open theme loader"),
@@ -888,7 +888,7 @@ impl App {
             ("Shift + ← →",    "[Color picker] Adjust value by 1"),
             ("PgUp / PgDn",    "[Color picker] Adjust value by 25"),
             ("#",               "[Color picker] Enter hex code"),
-            ("Tab",             "[Color picker] Toggle FG / BG (non-pane only)"),
+            ("Tab",             "[Color picker] Toggle FG / BG (non-pane)"),
             ("Enter",           "[Color picker] Confirm color"),
             ("Esc",             "[Color picker] Cancel"),
             ("",                ""),
