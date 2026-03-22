@@ -29,10 +29,6 @@ pub enum InputMode {
 pub enum PreviewAttribute {
     Base,
     Background,
-    Emphasis0,
-    Emphasis1,
-    Emphasis2,
-    Emphasis3,
 }
 
 impl PreviewAttribute {
@@ -40,21 +36,13 @@ impl PreviewAttribute {
         match self {
             Self::Base => "FG",
             Self::Background => "BG",
-            Self::Emphasis0 => "Accent 1",
-            Self::Emphasis1 => "Accent 2",
-            Self::Emphasis2 => "Accent 3",
-            Self::Emphasis3 => "Accent 4",
         }
     }
 
     pub fn cycle(&mut self) {
         *self = match self {
             Self::Base => Self::Background,
-            Self::Background => Self::Emphasis0,
-            Self::Emphasis0 => Self::Emphasis1,
-            Self::Emphasis1 => Self::Emphasis2,
-            Self::Emphasis2 => Self::Emphasis3,
-            Self::Emphasis3 => Self::Base,
+            Self::Background => Self::Base,
         };
     }
 }
@@ -471,10 +459,6 @@ impl App {
         match attr {
             PreviewAttribute::Base => component.base,
             PreviewAttribute::Background => component.background,
-            PreviewAttribute::Emphasis0 => component.emphasis_0,
-            PreviewAttribute::Emphasis1 => component.emphasis_1,
-            PreviewAttribute::Emphasis2 => component.emphasis_2,
-            PreviewAttribute::Emphasis3 => component.emphasis_3,
         }
     }
 
@@ -488,10 +472,6 @@ impl App {
         match attr {
             PreviewAttribute::Base => component.base = color,
             PreviewAttribute::Background => component.background = color,
-            PreviewAttribute::Emphasis0 => component.emphasis_0 = color,
-            PreviewAttribute::Emphasis1 => component.emphasis_1 = color,
-            PreviewAttribute::Emphasis2 => component.emphasis_2 = color,
-            PreviewAttribute::Emphasis3 => component.emphasis_3 = color,
         }
         self.dirty = true;
     }

@@ -528,7 +528,7 @@ impl App {
                 ("S+←→",   "±1",      "±1"),
                 ("PgUp/Dn","±25",     "±25"),
                 ("#",      "HEX",     "HX"),
-                ("tab",    "CYCLE ATTR", "ATTR"),
+                ("tab",    "FG/BG",   "F/B"),
                 ("Enter",  "KEEP",    "OK"),
                 ("Esc",    "CANCEL",  "ESC"),
             ],
@@ -697,10 +697,6 @@ impl App {
             let c = match self.selected_attribute {
                 PreviewAttribute::Base => orig.base,
                 PreviewAttribute::Background => orig.background,
-                PreviewAttribute::Emphasis0 => orig.emphasis_0,
-                PreviewAttribute::Emphasis1 => orig.emphasis_1,
-                PreviewAttribute::Emphasis2 => orig.emphasis_2,
-                PreviewAttribute::Emphasis3 => orig.emphasis_3,
             };
             (
                 Color::Rgb(c.r, c.g, c.b),
