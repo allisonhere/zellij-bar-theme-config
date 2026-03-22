@@ -517,7 +517,6 @@ impl App {
             InputMode::Preview => &[
                 ("↑↓←→", "NAVIGATE",   "NAV"),
                 ("c",    "COLOR",      "CLR"),
-                ("tab",  "FG/BG",      "F/B"),
                 ("s",    "SAVE AS",    "SAVE"),
                 ("l",    "LOAD",       "LD"),
                 ("a",    "SAVE+APPLY", "APPLY"),
