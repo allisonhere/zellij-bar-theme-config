@@ -18,6 +18,13 @@ impl ThemeEntry {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThemeFilter {
+    All,
+    Builtin,
+    Saved,
+}
+
 pub struct App {
     pub theme: Theme,
     pub selected_element: PreviewElement,
@@ -28,7 +35,9 @@ pub struct App {
     pub color_editor: ColorEditor,
     pub original_component: Option<ThemeComponent>,
     pub theme_name_input: String,
+    pub all_themes: Vec<ThemeEntry>,
     pub loadable_themes: Vec<ThemeEntry>,
+    pub theme_filter: ThemeFilter,
     pub selected_theme_index: usize,
     pub dirty: bool,
     pub original_theme: Option<crate::theme::Theme>,
@@ -338,7 +347,9 @@ impl Default for App {
             color_editor: ColorEditor::from_rgb(200, 200, 200),
             original_component: None,
             theme_name_input: String::from("default"),
+            all_themes: Vec::new(),
             loadable_themes: Vec::new(),
+            theme_filter: ThemeFilter::All,
             selected_theme_index: 0,
             dirty: false,
             original_theme: None,
@@ -493,10 +504,39 @@ impl App {
             .map(|(name, _)| ThemeEntry::Builtin(name))
             .collect();
 
-        self.loadable_themes = user_themes.into_iter().chain(builtin_themes).collect();
+        self.all_themes = user_themes.into_iter().chain(builtin_themes).collect();
+        self.apply_filter_to_list();
+    }
+
+    fn apply_filter_to_list(&mut self) {
+        self.loadable_themes = self.all_themes.iter().filter(|e| match self.theme_filter {
+            ThemeFilter::All => true,
+            ThemeFilter::Builtin => e.is_builtin(),
+            ThemeFilter::Saved => !e.is_builtin(),
+        }).cloned().collect();
 
         if self.selected_theme_index >= self.loadable_themes.len() {
             self.selected_theme_index = self.loadable_themes.len().saturating_sub(1);
+        }
+    }
+
+    pub fn set_theme_filter(&mut self, filter: ThemeFilter) {
+        // Toggle off if same filter pressed again
+        self.theme_filter = if self.theme_filter == filter { ThemeFilter::All } else { filter };
+        self.apply_filter_to_list();
+        self.selected_theme_index = 0;
+        // Recompute swatches for the new filtered list
+        self.theme_swatches = self.loadable_themes.iter().map(|entry| {
+            match load_entry(entry, &self.config_manager) {
+                Ok(t) => theme_swatches(&t),
+                Err(_) => [RgbColor::new(50, 50, 50); 4],
+            }
+        }).collect();
+        // Live-preview the newly selected theme
+        if let Some(entry) = self.loadable_themes.get(0).cloned() {
+            if let Ok(t) = load_entry(&entry, &self.config_manager) {
+                self.theme = t;
+            }
         }
     }
 
