@@ -725,8 +725,8 @@ impl App {
 
         frame.render_widget(Clear, overlay_area);
 
-        const OB_BG:     Color = Color::Rgb(16, 12, 26);
-        const OB_BORDER: Color = Color::Rgb(167, 139, 250);
+        const OB_BG:     Color = Color::Rgb(10, 10, 14);
+        const OB_BORDER: Color = Color::Rgb(55, 50, 75);
         const KEY_BG:    Color = Color::Rgb(80, 80, 160);
         const KEY_FG:    Color = Color::Rgb(18, 18, 18);
         const LBL_FG:    Color = Color::Rgb(150, 140, 200);
@@ -906,13 +906,13 @@ impl App {
             .border_type(BorderType::Rounded)
             .title(" Theme Name ")
             .title_style(Style::new().fg(Color::Rgb(167, 139, 250)).add_modifier(Modifier::BOLD))
-            .border_style(Style::new().fg(Color::Rgb(167, 139, 250)))
-            .style(Style::new().bg(Color::Rgb(16, 12, 26)));
+            .border_style(Style::new().fg(Color::Rgb(55, 50, 75)))
+            .style(Style::new().bg(Color::Rgb(10, 10, 14)));
 
         frame.render_widget(
             Paragraph::new(lines)
                 .block(block)
-                .style(Style::new().bg(Color::Rgb(16, 12, 26))),
+                .style(Style::new().bg(Color::Rgb(10, 10, 14))),
             area,
         );
     }
@@ -981,13 +981,13 @@ impl App {
             .border_type(BorderType::Rounded)
             .title(" Help ")
             .title_style(Style::new().fg(Color::Rgb(167, 139, 250)).add_modifier(Modifier::BOLD))
-            .border_style(Style::new().fg(Color::Rgb(167, 139, 250)))
-            .style(Style::new().bg(Color::Rgb(16, 12, 26)));
+            .border_style(Style::new().fg(Color::Rgb(55, 50, 75)))
+            .style(Style::new().bg(Color::Rgb(10, 10, 14)));
 
         frame.render_widget(
             Paragraph::new(lines)
                 .block(block)
-                .style(Style::new().bg(Color::Rgb(16, 12, 26))),
+                .style(Style::new().bg(Color::Rgb(10, 10, 14))),
             area,
         );
     }
@@ -998,12 +998,12 @@ impl App {
         let area = centered_rect(frame.area(), overlay_w, overlay_h);
         frame.render_widget(Clear, area);
 
-        const PANEL_BG: Color = Color::Rgb(16, 12, 26);
+        const PANEL_BG: Color = Color::Rgb(10, 10, 14);
 
         // Outer panel (no title in border — title lives in first inner row)
         let outer_block = Block::bordered()
             .border_type(BorderType::Rounded)
-            .border_style(Style::new().fg(Color::Rgb(167, 139, 250)))
+            .border_style(Style::new().fg(Color::Rgb(55, 50, 75)))
             .style(Style::new().bg(PANEL_BG));
         let inner = outer_block.inner(area);
         frame.render_widget(outer_block, area);
@@ -1055,10 +1055,13 @@ impl App {
         );
 
         // ── Search row ───────────────────────────────────────────────────────
-        let search_text = if self.theme_search_query.is_empty() {
-            String::from("  / (type to search)")
+        let display_query = self.theme_search_query.trim_start_matches('/');
+        let search_text = if display_query.is_empty() {
+            String::from("  search: (type to filter)")
+        } else if self.search_focused {
+            format!("  search: {}_", display_query)
         } else {
-            format!("  / {}", self.theme_search_query)
+            format!("  search: {}  (Enter/↑↓ to navigate)", display_query)
         };
         let search_fg = if self.theme_search_query.is_empty() {
             Color::Rgb(80, 80, 100)
@@ -1114,14 +1117,14 @@ impl App {
         active_name: &Option<String>,
     ) {
         let entry = &self.loadable_themes[index];
-        let swatches = self.theme_swatches.get(index).copied()
+        let swatches = self.theme_swatches.get(entry.name()).copied()
             .unwrap_or([crate::theme::RgbColor::new(50, 50, 50); 4]);
         let is_active = active_name.as_deref() == Some(entry.name());
 
         let (card_bg, border_col) = if selected {
-            (Color::Rgb(28, 18, 48), Color::Rgb(167, 139, 250))
+            (Color::Rgb(22, 20, 30), Color::Rgb(100, 90, 130))
         } else {
-            (Color::Rgb(18, 12, 32), Color::Rgb(80, 55, 130))
+            (Color::Rgb(14, 13, 20), Color::Rgb(45, 42, 60))
         };
 
         let block = Block::bordered()

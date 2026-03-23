@@ -41,9 +41,9 @@ pub struct App {
     pub selected_theme_index: usize,
     pub dirty: bool,
     pub original_theme: Option<crate::theme::Theme>,
-    pub theme_swatches: Vec<[crate::theme::RgbColor; 4]>,
-    // Feature 2: search/filter by name
+    pub theme_swatches: std::collections::HashMap<String, [crate::theme::RgbColor; 4]>,
     pub theme_search_query: String,
+    pub search_focused: bool,
     // Feature 3: copy/paste color
     pub clipboard_color: Option<crate::theme::RgbColor>,
     // Feature 4: undo
@@ -363,8 +363,9 @@ impl Default for App {
             selected_theme_index: 0,
             dirty: false,
             original_theme: None,
-            theme_swatches: Vec::new(),
+            theme_swatches: std::collections::HashMap::new(),
             theme_search_query: String::new(),
+            search_focused: false,
             clipboard_color: None,
             undo_history: std::collections::HashMap::new(),
             loader_action_index: 0,
@@ -427,6 +428,8 @@ impl App {
 
     pub fn open_theme_load_dialog(&mut self) {
         self.theme_search_query = String::new();
+        self.search_focused = false;
+        self.theme_filter = ThemeFilter::All;
         self.original_theme = Some(self.theme.clone());
         self.refresh_theme_list();
         self.selected_theme_index = self
@@ -434,11 +437,12 @@ impl App {
             .iter()
             .position(|e| e.name() == self.theme.name)
             .unwrap_or(0);
-        self.theme_swatches = self.loadable_themes.iter().map(|entry| {
-            match load_entry(entry, &self.config_manager) {
+        self.theme_swatches = self.all_themes.iter().map(|entry| {
+            let sw = match load_entry(entry, &self.config_manager) {
                 Ok(t) => theme_swatches(&t),
                 Err(_) => [crate::theme::RgbColor::new(50, 50, 50); 4],
-            }
+            };
+            (entry.name().to_string(), sw)
         }).collect();
         // Live-preview the initially selected theme
         if let Some(entry) = self.loadable_themes.get(self.selected_theme_index).cloned() {
@@ -451,16 +455,21 @@ impl App {
     }
 
     pub fn load_selected_theme(&mut self) {
-        let name = self.loadable_themes
-            .get(self.selected_theme_index)
-            .map(|e| e.name().to_string())
-            .unwrap_or_default();
-        // Theme is already loaded into self.theme from live preview scrolling
-        self.sync_theme_name_input();
-        self.original_theme = None;
-        self.dirty = false;
-        self.message = Some(format!("✓ Loaded: {}", name));
-        self.input_mode = InputMode::Preview;
+        if let Some(entry) = self.loadable_themes.get(self.selected_theme_index).cloned() {
+            let name = entry.name().to_string();
+            match load_entry(&entry, &self.config_manager) {
+                Ok(t) => { self.theme = t; }
+                Err(e) => {
+                    self.message = Some(format!("✗ Error loading \"{}\": {}", name, e));
+                    return;
+                }
+            }
+            self.sync_theme_name_input();
+            self.original_theme = None;
+            self.dirty = false;
+            self.message = Some(format!("✓ Loaded: {}", name));
+            self.input_mode = InputMode::Preview;
+        }
     }
 
     pub fn apply_selected_theme(&mut self) {
@@ -485,6 +494,7 @@ impl App {
         }
         self.sync_theme_name_input();
         self.theme_search_query = String::new();
+        self.search_focused = false;
         self.input_mode = InputMode::Preview;
         self.message = None;
     }
@@ -524,15 +534,15 @@ impl App {
         self.apply_filter_to_list();
     }
 
-    fn apply_filter_to_list(&mut self) {
-        let q = self.theme_search_query.to_ascii_lowercase();
+    pub fn apply_filter_to_list(&mut self) {
+        let q = self.theme_search_query.trim_start_matches('/').to_ascii_lowercase();
         self.loadable_themes = self.all_themes.iter().filter(|e| {
             let matches_filter = match self.theme_filter {
                 ThemeFilter::All => true,
                 ThemeFilter::Builtin => e.is_builtin(),
                 ThemeFilter::Saved => !e.is_builtin(),
             };
-            let matches_search = q.is_empty() || e.name().to_ascii_lowercase().contains(&q);
+            let matches_search = q.is_empty() || fuzzy_match(&e.name().to_ascii_lowercase(), &q);
             matches_filter && matches_search
         }).cloned().collect();
 
@@ -546,13 +556,7 @@ impl App {
         self.theme_filter = if self.theme_filter == filter { ThemeFilter::All } else { filter };
         self.apply_filter_to_list();
         self.selected_theme_index = 0;
-        // Recompute swatches for the new filtered list
-        self.theme_swatches = self.loadable_themes.iter().map(|entry| {
-            match load_entry(entry, &self.config_manager) {
-                Ok(t) => theme_swatches(&t),
-                Err(_) => [RgbColor::new(50, 50, 50); 4],
-            }
-        }).collect();
+        // Swatches are keyed by name; no recompute needed after filter changes
         // Live-preview the newly selected theme
         if let Some(entry) = self.loadable_themes.get(0).cloned() {
             if let Ok(t) = load_entry(&entry, &self.config_manager) {
@@ -757,6 +761,16 @@ impl App {
         self.selected_theme_index = self.selected_theme_index.min(self.loadable_themes.len().saturating_sub(1));
         self.input_mode = InputMode::ThemeLoad;
     }
+}
+
+fn fuzzy_match(haystack: &str, needle: &str) -> bool {
+    let mut hay_chars = haystack.chars();
+    for n in needle.chars() {
+        if !hay_chars.any(|h| h == n) {
+            return false;
+        }
+    }
+    true
 }
 
 pub fn normalize_theme_name(input: &str) -> String {

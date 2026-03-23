@@ -183,52 +183,93 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
             }
             _ => {}
         },
-        InputMode::ThemeLoad => match key.code {
-            KeyCode::Esc => {
-                if !app.theme_search_query.is_empty() {
-                    app.theme_search_query = String::new();
-                    app.refresh_theme_list();
-                    app.move_theme_selection_to(0);
-                } else {
-                    app.cancel_theme_load();
+        InputMode::ThemeLoad => {
+            if app.search_focused {
+                match key.code {
+                    KeyCode::Enter | KeyCode::Down => {
+                        // Commit search — switch to card navigation
+                        app.search_focused = false;
+                        app.move_theme_selection_to(0);
+                    }
+                    KeyCode::Up => {
+                        app.search_focused = false;
+                        app.move_theme_selection_to(app.loadable_themes.len().saturating_sub(1));
+                    }
+                    KeyCode::Esc => {
+                        app.theme_search_query = String::new();
+                        app.search_focused = false;
+                        app.apply_filter_to_list();
+                        app.move_theme_selection_to(0);
+                    }
+                    KeyCode::Backspace => {
+                        app.theme_search_query.pop();
+                        app.apply_filter_to_list();
+                        app.move_theme_selection_to(0);
+                        if app.theme_search_query.is_empty() {
+                            app.search_focused = false;
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        app.theme_search_query.push(c);
+                        app.apply_filter_to_list();
+                        app.move_theme_selection_to(0);
+                    }
+                    _ => {}
+                }
+            } else {
+                match key.code {
+                    KeyCode::Esc => {
+                        if !app.theme_search_query.is_empty() {
+                            app.theme_search_query = String::new();
+                            app.apply_filter_to_list();
+                            app.move_theme_selection_to(0);
+                        } else {
+                            app.cancel_theme_load();
+                        }
+                    }
+                    KeyCode::Enter => {
+                        app.load_selected_theme();
+                    }
+                    KeyCode::Char('a') => {
+                        app.apply_selected_theme();
+                    }
+                    KeyCode::Char('d') => {
+                        app.set_theme_filter(crate::ui::state::ThemeFilter::Builtin);
+                    }
+                    KeyCode::Char('s') => {
+                        app.set_theme_filter(crate::ui::state::ThemeFilter::Saved);
+                    }
+                    KeyCode::Char('r') => {
+                        app.begin_rename_selected_theme();
+                    }
+                    KeyCode::Char('x') => {
+                        app.begin_delete_selected_theme();
+                    }
+                    KeyCode::Up => {
+                        app.move_theme_selection_up();
+                    }
+                    KeyCode::Down => {
+                        app.move_theme_selection_down();
+                    }
+                    KeyCode::Backspace => {
+                        if !app.theme_search_query.is_empty() {
+                            app.theme_search_query.pop();
+                            app.search_focused = true;
+                            app.apply_filter_to_list();
+                            app.move_theme_selection_to(0);
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        // Any other char starts/resumes search
+                        app.search_focused = true;
+                        app.theme_search_query.push(c);
+                        app.apply_filter_to_list();
+                        app.move_theme_selection_to(0);
+                    }
+                    _ => {}
                 }
             }
-            KeyCode::Enter => {
-                app.load_selected_theme();
-            }
-            KeyCode::Char('a') => {
-                app.apply_selected_theme();
-            }
-            KeyCode::Char('d') => {
-                app.set_theme_filter(crate::ui::state::ThemeFilter::Builtin);
-            }
-            KeyCode::Char('s') => {
-                app.set_theme_filter(crate::ui::state::ThemeFilter::Saved);
-            }
-            KeyCode::Char('r') => {
-                app.begin_rename_selected_theme();
-            }
-            KeyCode::Char('x') => {
-                app.begin_delete_selected_theme();
-            }
-            KeyCode::Up => {
-                app.move_theme_selection_up();
-            }
-            KeyCode::Down => {
-                app.move_theme_selection_down();
-            }
-            KeyCode::Backspace => {
-                app.theme_search_query.pop();
-                app.refresh_theme_list();
-                app.move_theme_selection_to(0);
-            }
-            KeyCode::Char(c) => {
-                app.theme_search_query.push(c);
-                app.refresh_theme_list();
-                app.move_theme_selection_to(0);
-            }
-            _ => {}
-        },
+        }
         InputMode::Help => match key.code {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?') => {
                 app.input_mode = InputMode::Preview;
