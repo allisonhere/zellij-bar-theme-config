@@ -552,6 +552,7 @@ impl App {
             InputMode::ThemeLoad => &[
                 ("↑↓",   "SELECT", "SEL"),
                 ("Enter","LOAD",   "LD"),
+                ("a",    "APPLY",  "AP"),
                 ("Esc",  "CANCEL", "ESC"),
             ],
             InputMode::Help => &[
@@ -937,78 +938,76 @@ impl App {
 
     fn render_theme_load_overlay(&self, frame: &mut Frame) {
         let overlay_h = 24u16.min(frame.area().height.saturating_sub(4));
-        let area = centered_rect(frame.area(), 56, overlay_h);
+        let overlay_w = 60u16.min(frame.area().width.saturating_sub(4));
+        let area = centered_rect(frame.area(), overlay_w, overlay_h);
         frame.render_widget(Clear, area);
 
-        // inner height available for scrollable content (subtract 2 for borders)
-        let viewport = overlay_h.saturating_sub(2) as usize;
+        let viewport = overlay_h.saturating_sub(2) as usize; // subtract borders
 
-        let has_user = self.loadable_themes.iter().any(|e| !e.is_builtin());
-
-        // Build all content lines and record line index of each theme entry
         let mut all_lines: Vec<Line> = Vec::new();
-        let mut entry_lines: Vec<usize> = Vec::new(); // line index per theme entry
 
-        if has_user {
-            all_lines.push(Line::from(Span::styled(
-                " ── Saved ───────────────────────────",
-                Style::new().fg(Color::DarkGray),
-            )));
-        }
+        // D/S header row (pill-style tab labels)
+        all_lines.push(Line::from(vec![
+            Span::raw(" "),
+            Span::styled(" D ", Style::new().fg(Color::Rgb(18,18,18)).bg(Color::Rgb(100,100,200)).add_modifier(Modifier::BOLD)),
+            Span::styled(" default ", Style::new().fg(Color::Rgb(150,150,200)).bg(Color::Rgb(30,30,50))),
+            Span::raw("  "),
+            Span::styled(" S ", Style::new().fg(Color::Rgb(18,18,18)).bg(Color::Rgb(80,80,120)).add_modifier(Modifier::BOLD)),
+            Span::styled(" saved ", Style::new().fg(Color::Rgb(120,120,160)).bg(Color::Rgb(30,30,50))),
+        ]));
+        all_lines.push(Line::from(""));
 
-        let mut showed_builtin_header = false;
-        for (index, entry) in self.loadable_themes.iter().enumerate() {
-            if entry.is_builtin() && !showed_builtin_header {
-                showed_builtin_header = true;
-                if has_user { all_lines.push(Line::from("")); }
-                all_lines.push(Line::from(Span::styled(
-                    " ── Built-in ────────────────────────",
-                    Style::new().fg(Color::DarkGray),
-                )));
-            }
-            entry_lines.push(all_lines.len());
-            let selected = index == self.selected_theme_index;
-            let prefix = if selected { " > " } else { "   " };
-            let style = if selected {
-                Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-            } else if entry.is_builtin() {
-                Style::new().fg(Color::Rgb(150, 150, 180))
+        let card_start_line = all_lines.len(); // where cards begin
+
+        for (i, entry) in self.loadable_themes.iter().enumerate() {
+            let selected = i == self.selected_theme_index;
+            let card_bg = if selected { Color::Rgb(40, 40, 60) } else { Color::Rgb(25, 25, 35) };
+            let name_style = if selected {
+                Style::new().fg(Color::White).bg(card_bg).add_modifier(Modifier::BOLD)
             } else {
-                Style::new().fg(Color::White)
+                Style::new().fg(Color::Rgb(200, 200, 200)).bg(card_bg)
             };
+
+            let swatches = self.theme_swatches.get(i).copied()
+                .unwrap_or([crate::theme::RgbColor::new(50,50,50); 4]);
+
+            // Line 1: name + swatches
+            let name_text = format!(" {:<30}", entry.name());
+            let mut line1_spans = vec![Span::styled(name_text, name_style)];
+            for sw in &swatches {
+                line1_spans.push(Span::styled("⬤ ", Style::new().fg(Color::Rgb(sw.r, sw.g, sw.b)).bg(card_bg)));
+            }
+            line1_spans.push(Span::styled(" ", Style::new().bg(card_bg)));
+            all_lines.push(Line::from(line1_spans));
+
+            // Line 2: subtitle + [a] button
+            let subtitle = if entry.is_builtin() { "Built-in" } else { "Saved" };
+            let subtitle_text = format!(" {:<38}", subtitle);
+            let mut line2_spans = vec![Span::styled(subtitle_text, Style::new().fg(Color::Rgb(100,100,120)).bg(card_bg))];
+            line2_spans.push(Span::styled("[", Style::new().fg(Color::DarkGray).bg(card_bg)));
+            line2_spans.push(Span::styled("a", Style::new().fg(Color::Yellow).bg(card_bg).add_modifier(Modifier::BOLD)));
+            line2_spans.push(Span::styled("] ", Style::new().fg(Color::DarkGray).bg(card_bg)));
+            all_lines.push(Line::from(line2_spans));
+
+            // Line 3: separator
             all_lines.push(Line::from(Span::styled(
-                format!("{}{}", prefix, entry.name()),
-                style,
+                " ".repeat(overlay_w.saturating_sub(2) as usize),
+                Style::new().bg(Color::Rgb(18, 18, 18)),
             )));
         }
 
-        if self.loadable_themes.is_empty() {
-            all_lines.push(Line::from(Span::styled(
-                "   (no themes found)",
-                Style::new().fg(Color::DarkGray),
-            )));
-        }
-
-        // Compute scroll offset to keep selected item in view
-        let selected_line = entry_lines.get(self.selected_theme_index).copied().unwrap_or(0);
+        // Scroll to keep selected card visible
+        let selected_top = card_start_line + self.selected_theme_index * 3;
         let total = all_lines.len();
-        let scroll = if total <= viewport {
+        let scroll: usize = if total <= viewport {
             0
         } else {
-            let half = viewport / 2;
-            selected_line.saturating_sub(half).min(total - viewport)
-        };
-
-        // Scroll indicator in title
-        let indicator = if total > viewport {
-            format!(" Load Theme  {}/{} ", self.selected_theme_index + 1, self.loadable_themes.len())
-        } else {
-            " Load Theme ".to_string()
+            selected_top.saturating_sub(viewport / 2).min(total.saturating_sub(viewport))
         };
 
         let block = Block::bordered()
             .border_type(BorderType::Rounded)
-            .title(indicator)
+            .title(format!(" Themes  {}/{} ", self.selected_theme_index + 1, self.loadable_themes.len()))
             .title_style(Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD))
             .border_style(Style::new().fg(Color::Yellow))
             .style(Style::new().bg(Color::Rgb(18, 18, 18)));

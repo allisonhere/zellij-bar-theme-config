@@ -31,6 +31,8 @@ pub struct App {
     pub loadable_themes: Vec<ThemeEntry>,
     pub selected_theme_index: usize,
     pub dirty: bool,
+    pub original_theme: Option<crate::theme::Theme>,
+    pub theme_swatches: Vec<[crate::theme::RgbColor; 4]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -301,6 +303,29 @@ impl ColorEditor {
     }
 }
 
+fn theme_swatches(theme: &crate::theme::Theme) -> [crate::theme::RgbColor; 4] {
+    [
+        theme.get(crate::theme::ThemeComponentType::TextUnselected).background,
+        theme.get(crate::theme::ThemeComponentType::RibbonSelected).background,
+        theme.get(crate::theme::ThemeComponentType::FrameSelected).base,
+        theme.get(crate::theme::ThemeComponentType::FrameHighlight).base,
+    ]
+}
+
+fn load_entry(entry: &ThemeEntry, config_manager: &crate::config::ConfigManager) -> Result<crate::theme::Theme, crate::config::ConfigError> {
+    match entry {
+        ThemeEntry::User(n) => config_manager.load_theme(n),
+        ThemeEntry::Builtin(n) => {
+            let kdl = crate::bundled_themes::THEMES
+                .iter()
+                .find(|(k, _)| k == n)
+                .map(|(_, v)| *v)
+                .unwrap_or("");
+            crate::config::parse_theme_kdl(kdl, n)
+        }
+    }
+}
+
 impl Default for App {
     fn default() -> Self {
         Self {
@@ -316,6 +341,8 @@ impl Default for App {
             loadable_themes: Vec::new(),
             selected_theme_index: 0,
             dirty: false,
+            original_theme: None,
+            theme_swatches: Vec::new(),
         }
     }
 }
@@ -374,48 +401,65 @@ impl App {
     }
 
     pub fn open_theme_load_dialog(&mut self) {
+        self.original_theme = Some(self.theme.clone());
         self.refresh_theme_list();
         self.selected_theme_index = self
             .loadable_themes
             .iter()
             .position(|e| e.name() == self.theme.name)
             .unwrap_or(0);
+        self.theme_swatches = self.loadable_themes.iter().map(|entry| {
+            match load_entry(entry, &self.config_manager) {
+                Ok(t) => theme_swatches(&t),
+                Err(_) => [crate::theme::RgbColor::new(50, 50, 50); 4],
+            }
+        }).collect();
+        // Live-preview the initially selected theme
+        if let Some(entry) = self.loadable_themes.get(self.selected_theme_index).cloned() {
+            if let Ok(t) = load_entry(&entry, &self.config_manager) {
+                self.theme = t;
+            }
+        }
         self.input_mode = InputMode::ThemeLoad;
         self.message = Some(String::from("Select a theme to load"));
     }
 
     pub fn load_selected_theme(&mut self) {
-        let Some(entry) = self.loadable_themes.get(self.selected_theme_index).cloned() else {
-            self.message = Some(String::from("✗ No theme selected"));
-            self.input_mode = InputMode::Preview;
-            return;
-        };
-
-        let name = entry.name().to_string();
-        let result = match &entry {
-            ThemeEntry::User(n) => self.config_manager.load_theme(n),
-            ThemeEntry::Builtin(n) => {
-                let kdl = crate::bundled_themes::THEMES
-                    .iter()
-                    .find(|(k, _)| k == n)
-                    .map(|(_, v)| *v)
-                    .unwrap_or("");
-                crate::config::parse_theme_kdl(kdl, n)
-            }
-        };
-
-        match result {
-            Ok(theme) => {
-                self.theme = theme;
-                self.sync_theme_name_input();
-                self.message = Some(format!("✓ Loaded: {}", name));
-                self.dirty = false;
-            }
-            Err(e) => {
-                self.message = Some(format!("✗ Error: {}", e));
-            }
-        }
+        let name = self.loadable_themes
+            .get(self.selected_theme_index)
+            .map(|e| e.name().to_string())
+            .unwrap_or_default();
+        // Theme is already loaded into self.theme from live preview scrolling
+        self.sync_theme_name_input();
+        self.original_theme = None;
+        self.dirty = false;
+        self.message = Some(format!("✓ Loaded: {}", name));
         self.input_mode = InputMode::Preview;
+    }
+
+    pub fn apply_selected_theme(&mut self) {
+        // theme already loaded into self.theme from scrolling
+        let name = self.loadable_themes
+            .get(self.selected_theme_index)
+            .map(|e| e.name().to_string())
+            .unwrap_or_default();
+        self.sync_theme_name_input();
+        self.original_theme = None;
+        self.dirty = false;
+        self.input_mode = InputMode::Preview;
+        match self.config_manager.apply_theme_to_zellij(&self.theme) {
+            Ok(()) => self.message = Some(format!("✓ Applied \"{}\" — restart Zellij to see changes", name)),
+            Err(e) => self.message = Some(format!("✗ Error: {}", e)),
+        }
+    }
+
+    pub fn cancel_theme_load(&mut self) {
+        if let Some(original) = self.original_theme.take() {
+            self.theme = original;
+        }
+        self.sync_theme_name_input();
+        self.input_mode = InputMode::Preview;
+        self.message = None;
     }
 
     pub fn apply_theme_to_zellij(&mut self) {
@@ -464,6 +508,11 @@ impl App {
         } else {
             self.selected_theme_index -= 1;
         }
+        if let Some(entry) = self.loadable_themes.get(self.selected_theme_index).cloned() {
+            if let Ok(t) = load_entry(&entry, &self.config_manager) {
+                self.theme = t;
+            }
+        }
     }
 
     pub fn move_theme_selection_down(&mut self) {
@@ -472,6 +521,11 @@ impl App {
         } else {
             self.selected_theme_index =
                 (self.selected_theme_index + 1) % self.loadable_themes.len();
+        }
+        if let Some(entry) = self.loadable_themes.get(self.selected_theme_index).cloned() {
+            if let Ok(t) = load_entry(&entry, &self.config_manager) {
+                self.theme = t;
+            }
         }
     }
 

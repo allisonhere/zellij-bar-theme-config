@@ -173,11 +173,13 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
         },
         InputMode::ThemeLoad => match key.code {
             KeyCode::Esc => {
-                app.input_mode = InputMode::Preview;
-                app.message = Some(String::from("Load cancelled"));
+                app.cancel_theme_load();
             }
             KeyCode::Enter => {
                 app.load_selected_theme();
+            }
+            KeyCode::Char('a') => {
+                app.apply_selected_theme();
             }
             KeyCode::Up => {
                 app.move_theme_selection_up();
