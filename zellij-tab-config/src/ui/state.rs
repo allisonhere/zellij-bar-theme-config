@@ -42,6 +42,14 @@ pub struct App {
     pub dirty: bool,
     pub original_theme: Option<crate::theme::Theme>,
     pub theme_swatches: Vec<[crate::theme::RgbColor; 4]>,
+    // Feature 2: search/filter by name
+    pub theme_search_query: String,
+    // Feature 3: copy/paste color
+    pub clipboard_color: Option<crate::theme::RgbColor>,
+    // Feature 4: undo
+    pub undo_history: std::collections::HashMap<(PreviewElement, PreviewAttribute), crate::theme::RgbColor>,
+    // Feature 5: rename/delete
+    pub loader_action_index: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,10 +59,12 @@ pub enum InputMode {
     ThemeNameInput,
     ThemeNameInputApply,
     ThemeLoad,
+    ThemeLoadRename,
+    ThemeLoadDeleteConfirm,
     Help,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PreviewAttribute {
     Base,
     Background,
@@ -76,7 +86,7 @@ impl PreviewAttribute {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PreviewElement {
     // Tab bar
     TabSelected,
@@ -354,6 +364,10 @@ impl Default for App {
             dirty: false,
             original_theme: None,
             theme_swatches: Vec::new(),
+            theme_search_query: String::new(),
+            clipboard_color: None,
+            undo_history: std::collections::HashMap::new(),
+            loader_action_index: 0,
         }
     }
 }
@@ -412,6 +426,7 @@ impl App {
     }
 
     pub fn open_theme_load_dialog(&mut self) {
+        self.theme_search_query = String::new();
         self.original_theme = Some(self.theme.clone());
         self.refresh_theme_list();
         self.selected_theme_index = self
@@ -469,6 +484,7 @@ impl App {
             self.theme = original;
         }
         self.sync_theme_name_input();
+        self.theme_search_query = String::new();
         self.input_mode = InputMode::Preview;
         self.message = None;
     }
@@ -509,10 +525,15 @@ impl App {
     }
 
     fn apply_filter_to_list(&mut self) {
-        self.loadable_themes = self.all_themes.iter().filter(|e| match self.theme_filter {
-            ThemeFilter::All => true,
-            ThemeFilter::Builtin => e.is_builtin(),
-            ThemeFilter::Saved => !e.is_builtin(),
+        let q = self.theme_search_query.to_ascii_lowercase();
+        self.loadable_themes = self.all_themes.iter().filter(|e| {
+            let matches_filter = match self.theme_filter {
+                ThemeFilter::All => true,
+                ThemeFilter::Builtin => e.is_builtin(),
+                ThemeFilter::Saved => !e.is_builtin(),
+            };
+            let matches_search = q.is_empty() || e.name().to_ascii_lowercase().contains(&q);
+            matches_filter && matches_search
         }).cloned().collect();
 
         if self.selected_theme_index >= self.loadable_themes.len() {
@@ -620,7 +641,9 @@ impl App {
     }
 
     pub fn close_color_picker(&mut self, save: bool) {
-        if !save {
+        if save {
+            self.record_undo();
+        } else {
             if let Some(original) = self.original_component.take() {
                 let comp_type = self.selected_element.component_type();
                 let component = self.theme.get_mut(comp_type);
@@ -636,6 +659,103 @@ impl App {
         let attr = self.selected_attribute;
         let color = self.get_color_by_attr(attr);
         self.color_editor = ColorEditor::from_rgb(color.r, color.g, color.b);
+    }
+
+    // Feature 2: move selection to index and live-preview
+    pub fn move_theme_selection_to(&mut self, index: usize) {
+        self.selected_theme_index = index;
+        if let Some(entry) = self.loadable_themes.get(self.selected_theme_index).cloned() {
+            if let Ok(t) = load_entry(&entry, &self.config_manager) {
+                self.theme = t;
+            }
+        }
+    }
+
+    // Feature 3: yank/paste color
+    pub fn yank_color(&mut self) {
+        let c = self.get_color_by_attr(self.selected_attribute);
+        self.clipboard_color = Some(c);
+        self.message = Some(format!("Yanked #{:02x}{:02x}{:02x}", c.r, c.g, c.b));
+    }
+
+    pub fn paste_color(&mut self) {
+        if let Some(c) = self.clipboard_color {
+            self.set_color_by_attr(self.selected_attribute, c);
+            self.dirty = true;
+            self.message = Some(format!("Pasted #{:02x}{:02x}{:02x}", c.r, c.g, c.b));
+        } else {
+            self.message = Some(String::from("Nothing to yank"));
+        }
+    }
+
+    // Feature 4: undo
+    pub fn record_undo(&mut self) {
+        if let Some(ref orig) = self.original_component {
+            let before = match self.selected_attribute {
+                PreviewAttribute::Base => orig.base,
+                PreviewAttribute::Background => orig.background,
+            };
+            self.undo_history.insert((self.selected_element, self.selected_attribute), before);
+        }
+    }
+
+    pub fn undo_color(&mut self) {
+        let key = (self.selected_element, self.selected_attribute);
+        if let Some(prev) = self.undo_history.remove(&key) {
+            self.set_color_by_attr(self.selected_attribute, prev);
+            self.dirty = true;
+            self.message = Some(String::from("Undone"));
+        } else {
+            self.message = Some(String::from("Nothing to undo"));
+        }
+    }
+
+    // Feature 5: rename/delete saved themes
+    pub fn begin_rename_selected_theme(&mut self) {
+        if self.loadable_themes.get(self.selected_theme_index).map(|e| e.is_builtin()).unwrap_or(true) {
+            self.message = Some(String::from("Cannot rename built-in themes"));
+            return;
+        }
+        self.loader_action_index = self.selected_theme_index;
+        self.theme_name_input = self.loadable_themes[self.selected_theme_index].name().to_string();
+        self.input_mode = InputMode::ThemeLoadRename;
+    }
+
+    pub fn commit_rename_theme(&mut self) {
+        let new_name = normalize_theme_name(&self.theme_name_input);
+        if new_name.is_empty() {
+            self.message = Some(String::from("✗ Invalid name"));
+            return;
+        }
+        let old_name = self.loadable_themes.get(self.loader_action_index).map(|e| e.name().to_string()).unwrap_or_default();
+        match self.config_manager.rename_theme(&old_name, &new_name) {
+            Ok(()) => self.message = Some(format!("✓ Renamed to {}", new_name)),
+            Err(e) => self.message = Some(format!("✗ {}", e)),
+        }
+        self.refresh_theme_list();
+        self.input_mode = InputMode::ThemeLoad;
+    }
+
+    pub fn begin_delete_selected_theme(&mut self) {
+        if self.loadable_themes.get(self.selected_theme_index).map(|e| e.is_builtin()).unwrap_or(true) {
+            self.message = Some(String::from("Cannot delete built-in themes"));
+            return;
+        }
+        self.loader_action_index = self.selected_theme_index;
+        let name = self.loadable_themes[self.selected_theme_index].name().to_string();
+        self.message = Some(format!("Delete \"{}\"? y = confirm, n = cancel", name));
+        self.input_mode = InputMode::ThemeLoadDeleteConfirm;
+    }
+
+    pub fn confirm_delete_theme(&mut self) {
+        let name = self.loadable_themes.get(self.loader_action_index).map(|e| e.name().to_string()).unwrap_or_default();
+        match self.config_manager.delete_theme(&name) {
+            Ok(()) => self.message = Some(format!("✓ Deleted \"{}\"", name)),
+            Err(e) => self.message = Some(format!("✗ {}", e)),
+        }
+        self.refresh_theme_list();
+        self.selected_theme_index = self.selected_theme_index.min(self.loadable_themes.len().saturating_sub(1));
+        self.input_mode = InputMode::ThemeLoad;
     }
 }
 

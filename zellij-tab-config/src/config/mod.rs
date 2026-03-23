@@ -76,6 +76,19 @@ impl ConfigManager {
         Ok(())
     }
 
+    pub fn rename_theme(&self, old_name: &str, new_name: &str) -> Result<(), ConfigError> {
+        let old_path = self.themes_dir.join(format!("{}.kdl", old_name));
+        let new_path = self.themes_dir.join(format!("{}.kdl", new_name));
+        fs::rename(&old_path, &new_path)?;
+        Ok(())
+    }
+
+    pub fn delete_theme(&self, name: &str) -> Result<(), ConfigError> {
+        let path = self.themes_dir.join(format!("{}.kdl", name));
+        fs::remove_file(&path)?;
+        Ok(())
+    }
+
     pub fn apply_theme_to_zellij(&self, theme: &Theme) -> Result<(), ConfigError> {
         self.save_theme(theme)?;
 

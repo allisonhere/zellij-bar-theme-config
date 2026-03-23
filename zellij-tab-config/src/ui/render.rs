@@ -88,6 +88,13 @@ impl App {
                 self.render_theme_name_input_mode(frame)
             }
             InputMode::ThemeLoad => self.render_theme_load_mode(frame),
+            InputMode::ThemeLoadRename => {
+                self.render_theme_load_mode(frame);
+                self.render_theme_name_input_overlay(frame);
+            }
+            InputMode::ThemeLoadDeleteConfirm => {
+                self.render_theme_load_mode(frame);
+            }
             InputMode::Help => self.render_help_mode(frame),
         }
     }
@@ -318,7 +325,7 @@ impl App {
         frame.render_widget(Paragraph::new(content).block(block), area);
     }
 
-    fn render_pane_highlight(&self, frame: &mut Frame, area: Rect, bg: Color, _text_fg: Color) {
+    fn render_pane_highlight(&self, frame: &mut Frame, area: Rect, bg: Color, text_fg: Color) {
         let t = &self.theme;
         let is_editing_frame = self.selected_element == PreviewElement::PaneHighlight;
 
@@ -381,62 +388,66 @@ impl App {
         let (ee_fg, ee_bg) = sel(PreviewElement::ExitError, exit_err_fg, exit_err_bg);
 
         let content = vec![
-            // Table section
+            // git status header lines
+            Line::from(Span::styled("$ git status", Style::new().fg(text_fg).bg(pane_bg))),
+            Line::from(Span::styled("On branch main", Style::new().fg(text_fg).bg(pane_bg))),
+            Line::from(Span::raw("")),
+            // Changes staged — table_title style
             Line::from(Span::styled(
-                " Name         Size ",
+                " Changes staged",
                 Style::new()
                     .fg(tt_fg)
                     .bg(tt_bg)
                     .add_modifier(sel_mod(PreviewElement::TableTitle) | Modifier::BOLD),
             )),
             Line::from(Span::styled(
-                " main.rs      4.2K ",
+                "  modified: main.rs",
                 Style::new()
                     .fg(ts_fg)
                     .bg(ts_bg)
                     .add_modifier(sel_mod(PreviewElement::TableCellSelected)),
             )),
             Line::from(Span::styled(
-                " Cargo.toml   1.1K ",
+                "  modified: lib.rs",
                 Style::new()
                     .fg(tu_fg)
                     .bg(tu_bg)
                     .add_modifier(sel_mod(PreviewElement::TableCellUnselected)),
             )),
             Line::from(Span::raw("")),
-            // List section
+            // Untracked files — list style
             Line::from(Span::styled(
-                " > main.rs          ",
+                " Untracked files",
                 Style::new()
                     .fg(ls_fg)
                     .bg(ls_bg)
-                    .add_modifier(sel_mod(PreviewElement::ListSelected)),
+                    .add_modifier(sel_mod(PreviewElement::ListSelected) | Modifier::BOLD),
             )),
             Line::from(Span::styled(
-                "   Cargo.toml       ",
+                "  src/utils.rs",
                 Style::new()
                     .fg(lu_fg)
                     .bg(lu_bg)
                     .add_modifier(sel_mod(PreviewElement::ListUnselected)),
             )),
             Line::from(Span::styled(
-                "   README.md        ",
+                "  README.md",
                 Style::new().fg(list_unsel_fg).bg(list_unsel_bg),
             )),
             Line::from(Span::styled("", Style::new().bg(pane_bg))),
-            // Exit codes
+            // Exit code pills
             Line::from(vec![
                 Span::styled(" ", Style::new().bg(pane_bg)),
                 Span::styled(
-                    " exit:0 ",
+                    " exit 0 ",
                     Style::new()
                         .fg(eo_fg)
                         .bg(eo_bg)
                         .add_modifier(sel_mod(PreviewElement::ExitSuccess)),
                 ),
-                Span::raw("  "),
+                Span::styled("  ", Style::new().bg(pane_bg)),
                 Span::styled(
-                    " exit:1 ",
+                    " exit 1 ",
                     Style::new()
                         .fg(ee_fg)
                         .bg(ee_bg)
@@ -475,6 +486,8 @@ impl App {
                     (" APPLY  ", sel_fg, sel_bg)
                 }
                 InputMode::ThemeLoad => (" LOAD   ", sel_fg, sel_bg),
+                InputMode::ThemeLoadRename => (" RENAME ", sel_fg, sel_bg),
+                InputMode::ThemeLoadDeleteConfirm => (" DELETE ", Color::Rgb(255, 100, 100), Color::Rgb(80, 20, 20)),
                 InputMode::Help => (" HELP   ", sel_fg, sel_bg),
             }
         };
@@ -555,7 +568,18 @@ impl App {
                 ("s",    "SAVED",   "SVD"),
                 ("Enter","LOAD",    "LD"),
                 ("a",    "APPLY",   "AP"),
+                ("r",    "RENAME",  "RN"),
+                ("x",    "DELETE",  "DEL"),
                 ("Esc",  "CANCEL",  "ESC"),
+            ],
+            InputMode::ThemeLoadRename => &[
+                ("type",  "NAME",   "NM"),
+                ("Enter", "RENAME", "OK"),
+                ("Esc",   "CANCEL", "ESC"),
+            ],
+            InputMode::ThemeLoadDeleteConfirm => &[
+                ("y", "CONFIRM", "Y"),
+                ("n", "CANCEL",  "N"),
             ],
             InputMode::Help => &[
                 ("Esc", "CLOSE", "X"),
@@ -899,6 +923,9 @@ impl App {
             ("↑/j  ↓/k  ← →",  "Navigate preview elements"),
             ("Tab",             "Toggle FG / BG (pane borders: FG only)"),
             ("c",               "Open color picker for selected color"),
+            ("y",               "Yank (copy) current color"),
+            ("p",               "Paste yanked color"),
+            ("u",               "Undo last color change"),
             ("s",               "Save theme as… (prompts for name)"),
             ("l",               "Open theme loader"),
             ("a",               "Apply current theme to Zellij config"),
@@ -917,11 +944,15 @@ impl App {
             ("",                ""),
             // Theme loader
             ("↑ ↓",            "[Load] Navigate themes"),
+            ("type",            "[Load] Search/filter themes by name"),
+            ("Backspace",       "[Load] Delete search character"),
             ("d",               "[Load] Filter: default / built-in themes"),
             ("s",               "[Load] Filter: saved themes"),
             ("Enter",           "[Load] Load selected theme"),
             ("a",               "[Load] Apply selected theme to Zellij"),
-            ("Esc",             "[Load] Cancel"),
+            ("r",               "[Load] Rename selected saved theme"),
+            ("x",               "[Load] Delete selected saved theme"),
+            ("Esc",             "[Load] Clear search or cancel"),
         ];
 
         let height = (entries.len() as u16 + 4).min(frame.area().height.saturating_sub(4));
@@ -962,7 +993,7 @@ impl App {
     }
 
     fn render_theme_load_overlay(&self, frame: &mut Frame) {
-        let overlay_h = 22u16.min(frame.area().height.saturating_sub(2));
+        let overlay_h = 23u16.min(frame.area().height.saturating_sub(2));
         let overlay_w = 56u16.min(frame.area().width.saturating_sub(4));
         let area = centered_rect(frame.area(), overlay_w, overlay_h);
         frame.render_widget(Clear, area);
@@ -1023,12 +1054,29 @@ impl App {
             header_rect,
         );
 
+        // ── Search row ───────────────────────────────────────────────────────
+        let search_text = if self.theme_search_query.is_empty() {
+            String::from("  / (type to search)")
+        } else {
+            format!("  / {}", self.theme_search_query)
+        };
+        let search_fg = if self.theme_search_query.is_empty() {
+            Color::Rgb(80, 80, 100)
+        } else {
+            Color::Rgb(200, 200, 240)
+        };
+        let search_rect = Rect { x: inner.x, y: inner.y + 1, width: inner.width, height: 1 };
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(search_text, Style::new().fg(search_fg).bg(PANEL_BG)))),
+            search_rect,
+        );
+
         // ── Cards ────────────────────────────────────────────────────────────
         // Each card slot = 4 lines (card border + 2 inner + card border)
         // plus 1 blank gap row = 5 total per slot
         const CARD_SLOT: u16 = 5;
-        let cards_y = inner.y + 2; // 1 header + 1 blank gap
-        let cards_h = inner.height.saturating_sub(2);
+        let cards_y = inner.y + 3; // 1 header + 1 search + 1 blank gap
+        let cards_h = inner.height.saturating_sub(3);
         let cards_per_view = (cards_h / CARD_SLOT) as usize;
 
         let active_name = self.original_theme.as_ref().map(|t| t.name.clone());

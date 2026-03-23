@@ -73,6 +73,18 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
                     app.selected_element.move_up();
                     app.message = None;
                 }
+                KeyCode::Char('y') => {
+                    app.message = None;
+                    app.yank_color();
+                }
+                KeyCode::Char('p') => {
+                    app.message = None;
+                    app.paste_color();
+                }
+                KeyCode::Char('u') => {
+                    app.message = None;
+                    app.undo_color();
+                }
                 _ => {}
             }
         }
@@ -173,7 +185,13 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
         },
         InputMode::ThemeLoad => match key.code {
             KeyCode::Esc => {
-                app.cancel_theme_load();
+                if !app.theme_search_query.is_empty() {
+                    app.theme_search_query = String::new();
+                    app.refresh_theme_list();
+                    app.move_theme_selection_to(0);
+                } else {
+                    app.cancel_theme_load();
+                }
             }
             KeyCode::Enter => {
                 app.load_selected_theme();
@@ -187,17 +205,59 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
             KeyCode::Char('s') => {
                 app.set_theme_filter(crate::ui::state::ThemeFilter::Saved);
             }
+            KeyCode::Char('r') => {
+                app.begin_rename_selected_theme();
+            }
+            KeyCode::Char('x') => {
+                app.begin_delete_selected_theme();
+            }
             KeyCode::Up => {
                 app.move_theme_selection_up();
             }
             KeyCode::Down => {
                 app.move_theme_selection_down();
             }
+            KeyCode::Backspace => {
+                app.theme_search_query.pop();
+                app.refresh_theme_list();
+                app.move_theme_selection_to(0);
+            }
+            KeyCode::Char(c) => {
+                app.theme_search_query.push(c);
+                app.refresh_theme_list();
+                app.move_theme_selection_to(0);
+            }
             _ => {}
         },
         InputMode::Help => match key.code {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?') => {
                 app.input_mode = InputMode::Preview;
+            }
+            _ => {}
+        },
+        InputMode::ThemeLoadRename => match key.code {
+            KeyCode::Esc => {
+                app.input_mode = InputMode::ThemeLoad;
+                app.message = None;
+            }
+            KeyCode::Enter => {
+                app.commit_rename_theme();
+            }
+            KeyCode::Backspace => {
+                app.pop_theme_name_char();
+            }
+            KeyCode::Char(c) => {
+                app.push_theme_name_char(c);
+            }
+            _ => {}
+        },
+        InputMode::ThemeLoadDeleteConfirm => match key.code {
+            KeyCode::Char('y') => {
+                app.confirm_delete_theme();
+            }
+            KeyCode::Char('n') | KeyCode::Esc => {
+                app.input_mode = InputMode::ThemeLoad;
+                app.message = None;
             }
             _ => {}
         },
