@@ -550,10 +550,12 @@ impl App {
                 ("Esc",   "CANCEL", "ESC"),
             ],
             InputMode::ThemeLoad => &[
-                ("↑↓",   "SELECT", "SEL"),
-                ("Enter","LOAD",   "LD"),
-                ("a",    "APPLY",  "AP"),
-                ("Esc",  "CANCEL", "ESC"),
+                ("↑↓",   "SELECT",  "SEL"),
+                ("d",    "DEFAULT", "DEF"),
+                ("s",    "SAVED",   "SVD"),
+                ("Enter","LOAD",    "LD"),
+                ("a",    "APPLY",   "AP"),
+                ("Esc",  "CANCEL",  "ESC"),
             ],
             InputMode::Help => &[
                 ("Esc", "CLOSE", "X"),
@@ -656,7 +658,7 @@ impl App {
         spans.push(Span::styled(
             info,
             Style::new()
-                .fg(Color::Yellow)
+                .fg(Color::Rgb(167, 139, 250))
                 .bg(bar_bg)
                 .add_modifier(Modifier::BOLD),
         ));
@@ -692,12 +694,19 @@ impl App {
     fn render_color_picker_overlay(&self, frame: &mut Frame) {
         let area = frame.area();
         let overlay_w = 52u16.min(area.width.saturating_sub(4));
-        let overlay_h = 15u16.min(area.height.saturating_sub(4));
+        let overlay_h = 17u16.min(area.height.saturating_sub(4));
         let overlay_x = area.width.saturating_sub(overlay_w + 2);
         let overlay_y = (area.height.saturating_sub(overlay_h)) / 2;
         let overlay_area = Rect::new(overlay_x, overlay_y, overlay_w, overlay_h);
 
         frame.render_widget(Clear, overlay_area);
+
+        const OB_BG:     Color = Color::Rgb(16, 12, 26);
+        const OB_BORDER: Color = Color::Rgb(167, 139, 250);
+        const KEY_BG:    Color = Color::Rgb(80, 80, 160);
+        const KEY_FG:    Color = Color::Rgb(18, 18, 18);
+        const LBL_FG:    Color = Color::Rgb(150, 140, 200);
+        const LBL_BG:    Color = Color::Rgb(22, 18, 42);
 
         let r = self.color_editor.r;
         let g = self.color_editor.g;
@@ -721,6 +730,23 @@ impl App {
         let attr_name = self.selected_attribute.label();
 
         let mut lines: Vec<Line> = Vec::new();
+
+        // ── Header row: title left, attribute pill right (mirrors loader layout) ──
+        let title_str = format!(" {} — {}", element_name, attr_name);
+        let title_span = Span::styled(title_str.clone(), Style::new().fg(Color::Rgb(200, 200, 240)).add_modifier(Modifier::BOLD));
+        let attr_pill: Vec<Span> = vec![
+            Span::styled(format!(" {} ", attr_name), Style::new().fg(KEY_FG).bg(KEY_BG).add_modifier(Modifier::BOLD)),
+            Span::styled(format!(" {} ", element_name), Style::new().fg(LBL_FG).bg(LBL_BG)),
+            Span::raw(" "),
+        ];
+        let title_w = title_str.len();
+        let pill_w: usize = attr_pill.iter().map(|s| s.width()).sum();
+        let inner_w = overlay_w.saturating_sub(2) as usize;
+        let gap = inner_w.saturating_sub(title_w + pill_w);
+        let mut header_spans = vec![title_span];
+        header_spans.push(Span::styled(" ".repeat(gap), Style::new().bg(OB_BG)));
+        header_spans.extend(attr_pill);
+        lines.push(Line::from(header_spans));
 
         // Before/after swatch
         if let Some((before_color, before_hex)) = orig_color {
@@ -772,7 +798,7 @@ impl App {
         if let Some(ref hex_str) = self.color_editor.hex_input {
             let display = format!("  #{:<6}█", hex_str);
             lines.push(Line::from(vec![
-                Span::styled(display, Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(display, Style::new().fg(Color::Rgb(167, 139, 250)).add_modifier(Modifier::BOLD)),
                 Span::styled("  type hex, Enter to apply, Esc to cancel", Style::new().fg(Color::DarkGray)),
             ]));
         } else {
@@ -783,39 +809,35 @@ impl App {
         }
         lines.push(Line::from(""));
 
-        // Pill-style keybinding row matching the main status bar aesthetic
-        let overlay_bg = Color::Rgb(18, 18, 18);
-        let key_bg = Color::Rgb(60, 60, 90);
-        let key_fg = Color::White;
-        let act_fg = Color::Rgb(180, 180, 180);
-        let mut pill_spans: Vec<Span> = Vec::new();
-        const HINTS_WITH_TAB: &[(&str, &str)] = &[
-            ("↑↓", "channel"), ("←→", "±5"), ("S+←→", "±1"),
-            ("#", "hex"), ("tab", "fg/bg"), ("↵", "keep"), ("Esc", "cancel"),
-        ];
-        const HINTS_NO_TAB: &[(&str, &str)] = &[
-            ("↑↓", "channel"), ("←→", "±5"), ("S+←→", "±1"),
-            ("#", "hex"), ("↵", "keep"), ("Esc", "cancel"),
-        ];
-        let pill_hints: &[(&str, &str)] = if self.selected_element.is_frame() { HINTS_NO_TAB } else { HINTS_WITH_TAB };
-        for (key, action) in pill_hints {
-            pill_spans.push(Span::styled("", Style::new().fg(key_bg).bg(overlay_bg)));
-            pill_spans.push(Span::styled(format!(" {} ", key), Style::new().fg(key_fg).bg(key_bg).add_modifier(Modifier::BOLD)));
-            pill_spans.push(Span::styled(format!(" {} ", action), Style::new().fg(act_fg).bg(overlay_bg)));
-        }
-        lines.push(Line::from(pill_spans));
+        // Two-row flat pill hints — same style as the theme loader D/S pills
+        let mk_pill = |key: &str, action: &str| -> Vec<Span<'static>> {
+            vec![
+                Span::styled(format!(" {} ", key),    Style::new().fg(KEY_FG).bg(KEY_BG).add_modifier(Modifier::BOLD)),
+                Span::styled(format!(" {} ", action), Style::new().fg(LBL_FG).bg(LBL_BG)),
+                Span::raw("  "),
+            ]
+        };
+        let row1: Vec<Span> = [("↑↓","ch"), ("←→","±5"), ("S+←→","±1"), ("#","hex")]
+            .iter().flat_map(|(k,a)| mk_pill(k, a)).collect();
+        let row2: Vec<Span> = if self.selected_element.is_frame() {
+            [("↵","keep"), ("Esc","cancel")]
+                .iter().flat_map(|(k,a)| mk_pill(k, a)).collect()
+        } else {
+            [("tab","fg/bg"), ("↵","keep"), ("Esc","cancel")]
+                .iter().flat_map(|(k,a)| mk_pill(k, a)).collect()
+        };
+        lines.push(Line::from([vec![Span::raw(" ")], row1].concat()));
+        lines.push(Line::from([vec![Span::raw(" ")], row2].concat()));
 
         let block = Block::bordered()
             .border_type(BorderType::Rounded)
-            .title(format!(" {} — {} ", element_name, attr_name))
-            .title_style(Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-            .border_style(Style::new().fg(Color::Yellow))
-            .style(Style::new().bg(Color::Rgb(18, 18, 18)));
+            .border_style(Style::new().fg(OB_BORDER))
+            .style(Style::new().bg(OB_BG));
 
         frame.render_widget(
             Paragraph::new(lines)
                 .block(block)
-                .style(Style::new().bg(Color::Rgb(18, 18, 18))),
+                .style(Style::new().bg(OB_BG)),
             overlay_area,
         );
     }
@@ -835,7 +857,7 @@ impl App {
             Line::from(" Save theme as "),
             Line::from(""),
             Line::from(vec![
-                Span::styled(" Name: ", Style::new().fg(Color::Yellow)),
+                Span::styled(" Name: ", Style::new().fg(Color::Rgb(167, 139, 250))),
                 Span::styled(
                     format!("{}_", self.theme_name_input),
                     Style::new().fg(Color::White).add_modifier(Modifier::BOLD),
@@ -859,14 +881,14 @@ impl App {
         let block = Block::bordered()
             .border_type(BorderType::Rounded)
             .title(" Theme Name ")
-            .title_style(Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-            .border_style(Style::new().fg(Color::Yellow))
-            .style(Style::new().bg(Color::Rgb(18, 18, 18)));
+            .title_style(Style::new().fg(Color::Rgb(167, 139, 250)).add_modifier(Modifier::BOLD))
+            .border_style(Style::new().fg(Color::Rgb(167, 139, 250)))
+            .style(Style::new().bg(Color::Rgb(16, 12, 26)));
 
         frame.render_widget(
             Paragraph::new(lines)
                 .block(block)
-                .style(Style::new().bg(Color::Rgb(18, 18, 18))),
+                .style(Style::new().bg(Color::Rgb(16, 12, 26))),
             area,
         );
     }
@@ -895,7 +917,10 @@ impl App {
             ("",                ""),
             // Theme loader
             ("↑ ↓",            "[Load] Navigate themes"),
-            ("Enter / a",       "[Load] Load selected theme"),
+            ("d",               "[Load] Filter: default / built-in themes"),
+            ("s",               "[Load] Filter: saved themes"),
+            ("Enter",           "[Load] Load selected theme"),
+            ("a",               "[Load] Apply selected theme to Zellij"),
             ("Esc",             "[Load] Cancel"),
         ];
 
@@ -903,7 +928,7 @@ impl App {
         let area = centered_rect(frame.area(), 68, height);
         frame.render_widget(Clear, area);
 
-        let key_style   = Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+        let key_style   = Style::new().fg(Color::Rgb(167, 139, 250)).add_modifier(Modifier::BOLD);
         let desc_style  = Style::new().fg(Color::White);
         let empty_style = Style::new();
 
@@ -924,14 +949,14 @@ impl App {
         let block = Block::bordered()
             .border_type(BorderType::Rounded)
             .title(" Help ")
-            .title_style(Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-            .border_style(Style::new().fg(Color::Yellow))
-            .style(Style::new().bg(Color::Rgb(18, 18, 18)));
+            .title_style(Style::new().fg(Color::Rgb(167, 139, 250)).add_modifier(Modifier::BOLD))
+            .border_style(Style::new().fg(Color::Rgb(167, 139, 250)))
+            .style(Style::new().bg(Color::Rgb(16, 12, 26)));
 
         frame.render_widget(
             Paragraph::new(lines)
                 .block(block)
-                .style(Style::new().bg(Color::Rgb(18, 18, 18))),
+                .style(Style::new().bg(Color::Rgb(16, 12, 26))),
             area,
         );
     }
@@ -942,12 +967,12 @@ impl App {
         let area = centered_rect(frame.area(), overlay_w, overlay_h);
         frame.render_widget(Clear, area);
 
-        const PANEL_BG: Color = Color::Rgb(12, 12, 20);
+        const PANEL_BG: Color = Color::Rgb(16, 12, 26);
 
         // Outer panel (no title in border — title lives in first inner row)
         let outer_block = Block::bordered()
             .border_type(BorderType::Rounded)
-            .border_style(Style::new().fg(Color::Rgb(70, 70, 110)))
+            .border_style(Style::new().fg(Color::Rgb(167, 139, 250)))
             .style(Style::new().bg(PANEL_BG));
         let inner = outer_block.inner(area);
         frame.render_widget(outer_block, area);
@@ -1046,9 +1071,9 @@ impl App {
         let is_active = active_name.as_deref() == Some(entry.name());
 
         let (card_bg, border_col) = if selected {
-            (Color::Rgb(30, 30, 50), Color::Rgb(130, 130, 215))
+            (Color::Rgb(28, 18, 48), Color::Rgb(167, 139, 250))
         } else {
-            (Color::Rgb(18, 18, 28), Color::Rgb(48, 48, 78))
+            (Color::Rgb(18, 12, 32), Color::Rgb(80, 55, 130))
         };
 
         let block = Block::bordered()
@@ -1086,7 +1111,7 @@ impl App {
         let subtitle = if entry.is_builtin() { "Built-in theme" } else { "Saved theme" };
         let btn_spans: Vec<Span> = vec![
             Span::styled("[", Style::new().fg(Color::Rgb(80, 80, 105)).bg(card_bg)),
-            Span::styled("A", Style::new().fg(Color::Rgb(255, 200, 50)).bg(card_bg).add_modifier(Modifier::BOLD)),
+            Span::styled("A", Style::new().fg(Color::Rgb(192, 132, 252)).bg(card_bg).add_modifier(Modifier::BOLD)),
             Span::styled("] activate ", Style::new().fg(Color::Rgb(150, 150, 180)).bg(card_bg)),
         ];
         let btn_w: usize = btn_spans.iter().map(|s| s.width()).sum();
