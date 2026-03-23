@@ -8,7 +8,9 @@ A terminal UI for creating, editing, and applying [Zellij](https://zellij.dev) t
 - **41 built-in themes** — all official Zellij themes bundled, no extra files needed
 - **Per-component theming** — control foreground and background for each UI element independently
 - **RGB color picker** — slider-based editor with hex input (`#rrggbb`)
-- **Load themes** — browse saved and built-in themes from a scrollable list
+- **Yank / paste / undo** — copy a color, paste it elsewhere, or undo the last change (`y` / `p` / `u`)
+- **Theme loader** — fuzzy search, filter by built-in or saved, live preview on scroll
+- **Rename / delete** — manage saved themes directly from the loader (`r` / `x`)
 - **Save themes** — writes to `~/.config/zellij/themes/` in the correct KDL format
 - **Apply to Zellij** — sets `theme "<name>"` in `~/.config/zellij/config.kdl` so Zellij picks it up on next launch
 - **Help overlay** — press `?` for a full keybinding reference
@@ -56,12 +58,15 @@ The app opens a full-terminal preview of a Zellij layout. Use the keyboard to na
 
 | Key | Action |
 |-----|--------|
-| `↑ ↓ ← →` | Navigate between preview elements |
+| `↑ ↓ ← →` / `j k` | Navigate between preview elements |
 | `Tab` | Toggle FG / BG (not available on pane borders) |
-| `c` | Open color picker for the selected color |
+| `c` / `Enter` | Open color picker for the selected color |
+| `y` | Yank (copy) current color |
+| `p` | Paste yanked color |
+| `u` | Undo last color change |
 | `s` | Save theme as… (prompts for a name) |
 | `l` | Open theme loader |
-| `a` | Save and apply current theme to Zellij |
+| `a` | Apply current theme to Zellij |
 | `?` | Toggle help overlay |
 | `q` / `Esc` | Quit |
 
@@ -82,9 +87,15 @@ The app opens a full-terminal preview of a Zellij layout. Use the keyboard to na
 
 | Key | Action |
 |-----|--------|
+| `type` | Search — fuzzy filter by name; `Enter` or `↓` to commit and navigate results |
 | `↑ ↓` | Navigate themes |
-| `Enter` / `a` | Load selected theme |
-| `Esc` | Cancel |
+| `Enter` | Load selected theme into editor |
+| `a` | Apply selected theme directly to Zellij |
+| `d` | Filter: built-in themes only |
+| `s` | Filter: saved themes only |
+| `r` | Rename selected saved theme |
+| `x` | Delete selected saved theme |
+| `Esc` | Clear search / cancel |
 
 ## Built-in themes
 

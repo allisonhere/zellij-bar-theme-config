@@ -943,16 +943,15 @@ impl App {
             ("Esc",             "[Color picker] Cancel"),
             ("",                ""),
             // Theme loader
+            ("type",            "[Load] Search — type to filter, Enter/↓ to navigate results"),
             ("↑ ↓",            "[Load] Navigate themes"),
-            ("type",            "[Load] Search/filter themes by name"),
-            ("Backspace",       "[Load] Delete search character"),
-            ("d",               "[Load] Filter: default / built-in themes"),
-            ("s",               "[Load] Filter: saved themes"),
-            ("Enter",           "[Load] Load selected theme"),
+            ("Enter",           "[Load] Load selected theme into editor"),
             ("a",               "[Load] Apply selected theme to Zellij"),
+            ("d",               "[Load] Filter: built-in themes"),
+            ("s",               "[Load] Filter: saved themes"),
             ("r",               "[Load] Rename selected saved theme"),
             ("x",               "[Load] Delete selected saved theme"),
-            ("Esc",             "[Load] Clear search or cancel"),
+            ("Esc",             "[Load] Clear search / cancel"),
         ];
 
         let height = (entries.len() as u16 + 4).min(frame.area().height.saturating_sub(4));
