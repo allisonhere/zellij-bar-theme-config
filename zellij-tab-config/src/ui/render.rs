@@ -725,12 +725,13 @@ impl App {
 
         frame.render_widget(Clear, overlay_area);
 
-        const OB_BG:     Color = Color::Rgb(10, 10, 14);
-        const OB_BORDER: Color = Color::Rgb(55, 50, 75);
-        const KEY_BG:    Color = Color::Rgb(80, 80, 160);
-        const KEY_FG:    Color = Color::Rgb(18, 18, 18);
-        const LBL_FG:    Color = Color::Rgb(150, 140, 200);
-        const LBL_BG:    Color = Color::Rgb(22, 18, 42);
+        const OB_BG:     Color = Color::Rgb(22, 22, 26);
+        const OB_BORDER: Color = Color::Rgb(90, 85, 115);
+        let t = &self.theme;
+        let key_bg = get_bg(ThemeComponentType::RibbonSelected, t);
+        let key_fg = get_fg(ThemeComponentType::RibbonSelected, t);
+        let lbl_bg = get_bg(ThemeComponentType::RibbonUnselected, t);
+        let lbl_fg = get_fg(ThemeComponentType::RibbonUnselected, t);
 
         let r = self.color_editor.r;
         let g = self.color_editor.g;
@@ -759,9 +760,11 @@ impl App {
         let title_str = format!(" {} — {}", element_name, attr_name);
         let title_span = Span::styled(title_str.clone(), Style::new().fg(Color::Rgb(200, 200, 240)).add_modifier(Modifier::BOLD));
         let attr_pill: Vec<Span> = vec![
-            Span::styled(format!(" {} ", attr_name), Style::new().fg(KEY_FG).bg(KEY_BG).add_modifier(Modifier::BOLD)),
-            Span::styled(format!(" {} ", element_name), Style::new().fg(LBL_FG).bg(LBL_BG)),
-            Span::raw(" "),
+            Span::styled("", Style::new().fg(key_bg).bg(OB_BG)),
+            Span::styled(format!(" {} ", attr_name), Style::new().fg(key_fg).bg(key_bg).add_modifier(Modifier::BOLD)),
+            Span::styled("", Style::new().fg(lbl_bg).bg(key_bg)),
+            Span::styled(format!(" {} ", element_name), Style::new().fg(lbl_fg).bg(lbl_bg)),
+            Span::styled("", Style::new().fg(lbl_bg).bg(OB_BG)),
         ];
         let title_w = title_str.len();
         let pill_w: usize = attr_pill.iter().map(|s| s.width()).sum();
@@ -833,12 +836,14 @@ impl App {
         }
         lines.push(Line::from(""));
 
-        // Two-row flat pill hints — same style as the theme loader D/S pills
         let mk_pill = |key: &str, action: &str| -> Vec<Span<'static>> {
             vec![
-                Span::styled(format!(" {} ", key),    Style::new().fg(KEY_FG).bg(KEY_BG).add_modifier(Modifier::BOLD)),
-                Span::styled(format!(" {} ", action), Style::new().fg(LBL_FG).bg(LBL_BG)),
-                Span::raw("  "),
+                Span::styled("", Style::new().fg(key_bg).bg(OB_BG)),
+                Span::styled(format!(" {} ", key),    Style::new().fg(key_fg).bg(key_bg).add_modifier(Modifier::BOLD)),
+                Span::styled("", Style::new().fg(lbl_bg).bg(key_bg)),
+                Span::styled(format!(" {} ", action), Style::new().fg(lbl_fg).bg(lbl_bg)),
+                Span::styled("", Style::new().fg(lbl_bg).bg(OB_BG)),
+                Span::raw(" "),
             ]
         };
         let row1: Vec<Span> = [("↑↓","ch"), ("←→","±5"), ("S+←→","±1"), ("#","hex")]
@@ -906,13 +911,13 @@ impl App {
             .border_type(BorderType::Rounded)
             .title(" Theme Name ")
             .title_style(Style::new().fg(Color::Rgb(167, 139, 250)).add_modifier(Modifier::BOLD))
-            .border_style(Style::new().fg(Color::Rgb(55, 50, 75)))
-            .style(Style::new().bg(Color::Rgb(10, 10, 14)));
+            .border_style(Style::new().fg(Color::Rgb(90, 85, 115)))
+            .style(Style::new().bg(Color::Rgb(22, 22, 26)));
 
         frame.render_widget(
             Paragraph::new(lines)
                 .block(block)
-                .style(Style::new().bg(Color::Rgb(10, 10, 14))),
+                .style(Style::new().bg(Color::Rgb(22, 22, 26))),
             area,
         );
     }
@@ -980,13 +985,13 @@ impl App {
             .border_type(BorderType::Rounded)
             .title(" Help ")
             .title_style(Style::new().fg(Color::Rgb(167, 139, 250)).add_modifier(Modifier::BOLD))
-            .border_style(Style::new().fg(Color::Rgb(55, 50, 75)))
-            .style(Style::new().bg(Color::Rgb(10, 10, 14)));
+            .border_style(Style::new().fg(Color::Rgb(90, 85, 115)))
+            .style(Style::new().bg(Color::Rgb(22, 22, 26)));
 
         frame.render_widget(
             Paragraph::new(lines)
                 .block(block)
-                .style(Style::new().bg(Color::Rgb(10, 10, 14))),
+                .style(Style::new().bg(Color::Rgb(22, 22, 26))),
             area,
         );
     }
@@ -997,12 +1002,12 @@ impl App {
         let area = centered_rect(frame.area(), overlay_w, overlay_h);
         frame.render_widget(Clear, area);
 
-        const PANEL_BG: Color = Color::Rgb(10, 10, 14);
+        const PANEL_BG: Color = Color::Rgb(22, 22, 26);
 
         // Outer panel (no title in border — title lives in first inner row)
         let outer_block = Block::bordered()
             .border_type(BorderType::Rounded)
-            .border_style(Style::new().fg(Color::Rgb(55, 50, 75)))
+            .border_style(Style::new().fg(Color::Rgb(90, 85, 115)))
             .style(Style::new().bg(PANEL_BG));
         let inner = outer_block.inner(area);
         frame.render_widget(outer_block, area);
@@ -1020,24 +1025,35 @@ impl App {
             ),
         ];
         use crate::ui::state::ThemeFilter;
+        let t = &self.theme;
+        let sel_bg   = get_bg(ThemeComponentType::RibbonSelected, t);
+        let sel_fg   = get_fg(ThemeComponentType::RibbonSelected, t);
+        let unsel_bg = get_bg(ThemeComponentType::RibbonUnselected, t);
+        let unsel_fg = get_fg(ThemeComponentType::RibbonUnselected, t);
         let d_active = matches!(self.theme_filter, ThemeFilter::Builtin);
         let s_active = matches!(self.theme_filter, ThemeFilter::Saved);
-        let (d_key_bg, d_key_fg, d_lbl_fg, d_lbl_bg) = if d_active {
-            (Color::Rgb(140,140,255), Color::Rgb(10,10,10), Color::Rgb(180,180,255), Color::Rgb(35,35,65))
+        let (d_key_bg, d_key_fg, d_lbl_bg, d_lbl_fg) = if d_active {
+            (sel_bg, sel_fg, unsel_bg, unsel_fg)
         } else {
-            (Color::Rgb(80,80,160), Color::Rgb(18,18,18), Color::Rgb(120,120,180), Color::Rgb(22,22,38))
+            (unsel_bg, unsel_fg, PANEL_BG, unsel_fg)
         };
-        let (s_key_bg, s_key_fg, s_lbl_fg, s_lbl_bg) = if s_active {
-            (Color::Rgb(140,140,255), Color::Rgb(10,10,10), Color::Rgb(180,180,255), Color::Rgb(35,35,65))
+        let (s_key_bg, s_key_fg, s_lbl_bg, s_lbl_fg) = if s_active {
+            (sel_bg, sel_fg, unsel_bg, unsel_fg)
         } else {
-            (Color::Rgb(60,60,120), Color::Rgb(18,18,18), Color::Rgb(100,100,150), Color::Rgb(22,22,38))
+            (unsel_bg, unsel_fg, PANEL_BG, unsel_fg)
         };
         let pill_spans: Vec<Span> = vec![
+            Span::styled("", Style::new().fg(d_key_bg).bg(PANEL_BG)),
             Span::styled(" D ", Style::new().fg(d_key_fg).bg(d_key_bg).add_modifier(Modifier::BOLD)),
+            Span::styled("", Style::new().fg(d_lbl_bg).bg(d_key_bg)),
             Span::styled(" default ", Style::new().fg(d_lbl_fg).bg(d_lbl_bg)),
+            Span::styled("", Style::new().fg(d_lbl_bg).bg(PANEL_BG)),
             Span::raw("  "),
+            Span::styled("", Style::new().fg(s_key_bg).bg(PANEL_BG)),
             Span::styled(" S ", Style::new().fg(s_key_fg).bg(s_key_bg).add_modifier(Modifier::BOLD)),
+            Span::styled("", Style::new().fg(s_lbl_bg).bg(s_key_bg)),
             Span::styled(" saved ", Style::new().fg(s_lbl_fg).bg(s_lbl_bg)),
+            Span::styled("", Style::new().fg(s_lbl_bg).bg(PANEL_BG)),
             Span::raw(" "),
         ];
         let title_w: usize = title_spans.iter().map(|s| s.width()).sum();
@@ -1121,9 +1137,9 @@ impl App {
         let is_active = active_name.as_deref() == Some(entry.name());
 
         let (card_bg, border_col) = if selected {
-            (Color::Rgb(22, 20, 30), Color::Rgb(100, 90, 130))
+            (Color::Rgb(24, 24, 28), Color::Rgb(160, 150, 190))
         } else {
-            (Color::Rgb(14, 13, 20), Color::Rgb(45, 42, 60))
+            (Color::Rgb(24, 24, 28), Color::Rgb(45, 42, 60))
         };
 
         let block = Block::bordered()
