@@ -115,6 +115,14 @@ case "$CHOICE" in
     *) die "Invalid choice" ;;
 esac
 
+# ── Bump Cargo.toml version to match tag ─────────────────────────────────────
+SEMVER="${NEW_TAG#v}"
+CARGO_TOML="zellij-tab-config/Cargo.toml"
+sed -i "s/^version = \".*\"/version = \"${SEMVER}\"/" "$CARGO_TOML"
+git add "$CARGO_TOML"
+git commit -m "chore: bump version to ${NEW_TAG}"
+ok "Bumped Cargo.toml to ${SEMVER}"
+
 # ── Tag & push ────────────────────────────────────────────────────────────────
 echo ""
 step "Tagging ${NEW_TAG}"
