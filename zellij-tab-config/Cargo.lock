@@ -2330,7 +2330,7 @@ dependencies = [
 
 [[package]]
 name = "zellij_tab_config"
-version = "0.1.0"
+version = "0.3.1"
 dependencies = [
  "crossterm",
  "dirs",
