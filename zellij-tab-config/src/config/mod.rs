@@ -292,6 +292,29 @@ fn theme_to_kdl(theme: &Theme) -> String {
     output.push_str("themes {\n");
     output.push_str(&format!("    {} {{\n", theme.name));
 
+    // Include standard Zellij palette keys so older Zellij versions (e.g. on
+    // Ubuntu/Pop!_OS) can parse the file without "missing fg" errors.
+    let fg      = theme.get(ThemeComponentType::TextUnselected).base;
+    let bg      = theme.get(ThemeComponentType::TextUnselected).background;
+    let white   = theme.get(ThemeComponentType::TextSelected).base;
+    let black   = theme.get(ThemeComponentType::TextUnselected).emphasis_3;
+    let blue    = theme.get(ThemeComponentType::RibbonSelected).background;
+    let green   = theme.get(ThemeComponentType::ExitCodeSuccess).base;
+    let red     = theme.get(ThemeComponentType::ExitCodeError).base;
+    let yellow  = theme.get(ThemeComponentType::FrameHighlight).base;
+    let magenta = theme.get(ThemeComponentType::RibbonUnselected).emphasis_0;
+    let cyan    = theme.get(ThemeComponentType::RibbonUnselected).emphasis_2;
+    let orange  = theme.get(ThemeComponentType::FrameHighlight).base;
+
+    for (key, c) in &[
+        ("fg", fg), ("bg", bg), ("black", black), ("red", red),
+        ("green", green), ("yellow", yellow), ("blue", blue),
+        ("magenta", magenta), ("cyan", cyan), ("white", white),
+        ("orange", orange),
+    ] {
+        output.push_str(&format!("        {} {} {} {}\n", key, c.r, c.g, c.b));
+    }
+
     for component_type in ThemeComponentType::all() {
         let component = theme.get(*component_type);
         output.push_str(&format!("        {} {{\n", component_type.component_key()));
