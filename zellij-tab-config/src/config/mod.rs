@@ -156,11 +156,38 @@ pub fn parse_theme_kdl(content: &str, name: &str) -> Result<Theme, ConfigError> 
         .map(|d| d.nodes().to_vec())
         .unwrap_or_default();
 
-    // Detect Zellij palette format by presence of standard palette keys.
-    let palette_keys = ["fg", "bg", "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
-    let is_palette = children.iter().any(|n| palette_keys.contains(&n.name().value()));
+    // Prefer explicit component blocks when present. Saved themes include both
+    // palette keys and per-component data, and the component data should win.
+    let has_component_nodes = children.iter().any(|n| {
+        matches!(
+            n.name().value(),
+            "text_unselected"
+                | "text_selected"
+                | "ribbon_unselected"
+                | "ribbon_selected"
+                | "table_title"
+                | "table_cell_unselected"
+                | "table_cell_selected"
+                | "list_unselected"
+                | "list_selected"
+                | "frame_unselected"
+                | "frame_selected"
+                | "frame_highlight"
+                | "exit_code_success"
+                | "exit_code_error"
+        )
+    });
 
-    if is_palette {
+    // Pure palette themes are still supported for built-ins and old files.
+    let palette_keys = [
+        "fg", "bg", "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
+    ];
+    let is_palette_only = !has_component_nodes
+        && children
+            .iter()
+            .any(|n| palette_keys.contains(&n.name().value()));
+
+    if is_palette_only {
         return Ok(theme_from_palette(&children, name));
     }
 
@@ -348,4 +375,30 @@ fn theme_to_kdl(theme: &Theme) -> String {
     output.push_str("    }\n");
     output.push_str("}\n");
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_theme_kdl, theme_to_kdl};
+    use crate::theme::{RgbColor, Theme, ThemeComponentType};
+
+    #[test]
+    fn saved_theme_round_trips_component_edits() {
+        let mut theme = Theme::default();
+        theme.name = "round-trip".to_string();
+        theme.get_mut(ThemeComponentType::RibbonSelected).background = RgbColor::new(1, 2, 3);
+        theme.get_mut(ThemeComponentType::TextSelected).base = RgbColor::new(9, 8, 7);
+
+        let saved = theme_to_kdl(&theme);
+        let loaded = parse_theme_kdl(&saved, &theme.name).expect("saved theme should parse");
+
+        assert_eq!(
+            loaded.get(ThemeComponentType::RibbonSelected).background,
+            RgbColor::new(1, 2, 3)
+        );
+        assert_eq!(
+            loaded.get(ThemeComponentType::TextSelected).base,
+            RgbColor::new(9, 8, 7)
+        );
+    }
 }

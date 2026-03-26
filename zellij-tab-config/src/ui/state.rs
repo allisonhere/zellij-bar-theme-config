@@ -46,6 +46,7 @@ pub struct App {
     pub theme_swatches: std::collections::HashMap<String, [crate::theme::RgbColor; 4]>,
     pub theme_search_query: String,
     pub search_focused: bool,
+    pub help_scroll: u16,
     // Feature 3: copy/paste color
     pub clipboard_color: Option<crate::theme::RgbColor>,
     // Feature 4: undo
@@ -55,6 +56,7 @@ pub struct App {
     // Self-update
     pub update_status: UpdateStatus,
     pub update_rx: Option<std::sync::mpsc::Receiver<UpdateMsg>>,
+    pub restart_after_exit: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,6 +68,7 @@ pub enum InputMode {
     ThemeLoad,
     ThemeLoadRename,
     ThemeLoadDeleteConfirm,
+    UpdateRestartConfirm,
     Help,
 }
 
@@ -296,11 +299,13 @@ impl Default for App {
             theme_swatches: std::collections::HashMap::new(),
             theme_search_query: String::new(),
             search_focused: false,
+            help_scroll: 0,
             clipboard_color: None,
             undo_history: std::collections::HashMap::new(),
             loader_action_index: 0,
             update_status: UpdateStatus::Idle,
             update_rx: None,
+            restart_after_exit: false,
         }
     }
 }
@@ -713,29 +718,81 @@ impl App {
     }
 
     pub fn start_self_update(&mut self) {
-        if let UpdateStatus::Available(tag) = &self.update_status {
-            let tag = tag.clone();
-            let (tx, rx) = std::sync::mpsc::channel();
-            self.update_status = UpdateStatus::Downloading;
-            self.update_rx = Some(rx);
-            std::thread::spawn(move || {
-                let _ = tx.send(UpdateMsg::UpdateComplete(crate::update::download_and_replace(&tag)));
-            });
+        match &self.update_status {
+            UpdateStatus::Available(tag) => {
+                let tag = tag.clone();
+                let (tx, rx) = std::sync::mpsc::channel();
+                self.update_status = UpdateStatus::Downloading;
+                self.update_rx = Some(rx);
+                self.message = None;
+                std::thread::spawn(move || {
+                    let _ = tx.send(UpdateMsg::UpdateComplete(crate::update::download_and_replace(&tag)));
+                });
+            }
+            UpdateStatus::Checking => {
+                self.message = Some(String::from("Still checking for updates"));
+            }
+            UpdateStatus::UpToDate | UpdateStatus::Idle => {
+                self.message = Some(String::from("No update available"));
+            }
+            UpdateStatus::Downloading => {
+                self.message = Some(String::from("Update already in progress"));
+            }
+            UpdateStatus::Done => {
+                self.message = Some(String::from("Update already installed; restart to apply"));
+            }
+            UpdateStatus::Failed(err) => {
+                self.message = Some(format!("✗ Update unavailable: {}", err));
+            }
         }
     }
 
     pub fn poll_update_channel(&mut self) {
-        let msg = self.update_rx.as_ref().and_then(|rx| rx.try_recv().ok());
-        if let Some(msg) = msg {
-            self.update_rx = None;
-            self.update_status = match msg {
-                UpdateMsg::VersionChecked(Ok(Some(tag))) => UpdateStatus::Available(tag),
-                UpdateMsg::VersionChecked(Ok(None))      => UpdateStatus::UpToDate,
-                UpdateMsg::VersionChecked(Err(e))        => UpdateStatus::Failed(e),
-                UpdateMsg::UpdateComplete(Ok(()))        => UpdateStatus::Done,
-                UpdateMsg::UpdateComplete(Err(e))        => UpdateStatus::Failed(e),
-            };
+        let Some(rx) = self.update_rx.as_ref() else {
+            return;
+        };
+
+        match rx.try_recv() {
+            Ok(msg) => {
+                self.update_rx = None;
+                self.message = None;
+                match msg {
+                    UpdateMsg::VersionChecked(Ok(Some(tag))) => {
+                        self.update_status = UpdateStatus::Available(tag);
+                    }
+                    UpdateMsg::VersionChecked(Ok(None)) => {
+                        self.update_status = UpdateStatus::UpToDate;
+                    }
+                    UpdateMsg::VersionChecked(Err(e)) => {
+                        self.update_status = UpdateStatus::Failed(e);
+                    }
+                    UpdateMsg::UpdateComplete(Ok(())) => {
+                        self.update_status = UpdateStatus::Done;
+                        self.input_mode = InputMode::UpdateRestartConfirm;
+                    }
+                    UpdateMsg::UpdateComplete(Err(e)) => {
+                        self.update_status = UpdateStatus::Failed(e);
+                    }
+                };
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.update_rx = None;
+                self.message = None;
+                self.update_status = UpdateStatus::Failed(String::from("update worker disconnected"));
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
         }
+    }
+
+    pub fn defer_restart(&mut self) {
+        self.input_mode = InputMode::Preview;
+        self.update_status = UpdateStatus::Idle;
+        self.message = None;
+    }
+
+    pub fn confirm_restart(&mut self) {
+        self.restart_after_exit = true;
+        self.input_mode = InputMode::Preview;
     }
 }
 

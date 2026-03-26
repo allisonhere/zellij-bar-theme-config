@@ -61,6 +61,7 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
                 }
                 KeyCode::Char('?') => {
                     app.message = None;
+                    app.help_scroll = 0;
                     app.input_mode = InputMode::Help;
                 }
                 KeyCode::Enter => {
@@ -373,6 +374,24 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?') => {
                 app.input_mode = InputMode::Preview;
             }
+            KeyCode::Up | KeyCode::Char('k') => {
+                app.help_scroll = app.help_scroll.saturating_sub(1);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                app.help_scroll = app.help_scroll.saturating_add(1);
+            }
+            KeyCode::PageUp => {
+                app.help_scroll = app.help_scroll.saturating_sub(8);
+            }
+            KeyCode::PageDown => {
+                app.help_scroll = app.help_scroll.saturating_add(8);
+            }
+            KeyCode::Home => {
+                app.help_scroll = 0;
+            }
+            KeyCode::End => {
+                app.help_scroll = u16::MAX;
+            }
             _ => {}
         },
         InputMode::ThemeLoadRename => match key.code {
@@ -398,6 +417,16 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
             KeyCode::Char('n') | KeyCode::Esc => {
                 app.input_mode = InputMode::ThemeLoad;
                 app.message = None;
+            }
+            _ => {}
+        },
+        InputMode::UpdateRestartConfirm => match key.code {
+            KeyCode::Enter | KeyCode::Char('r') | KeyCode::Char('y') => {
+                app.confirm_restart();
+                return true;
+            }
+            KeyCode::Char('l') | KeyCode::Char('n') | KeyCode::Esc => {
+                app.defer_restart();
             }
             _ => {}
         },
@@ -508,5 +537,12 @@ pub fn run(mut app: App) -> Result<(), Box<dyn std::error::Error>> {
 
     execute!(terminal.backend_mut(), crossterm::event::DisableMouseCapture)?;
     ratatui::restore();
+
+    if app.restart_after_exit {
+        let exe = std::env::current_exe()?;
+        let args: Vec<_> = std::env::args_os().skip(1).collect();
+        std::process::Command::new(exe).args(args).spawn()?;
+    }
+
     Ok(())
 }

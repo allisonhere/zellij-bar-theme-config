@@ -1,7 +1,10 @@
 use std::io::Read;
+use std::time::Duration;
 
 const REPO: &str = "allisonhere/zellij-bar-theme-config";
 const CURRENT: &str = env!("CARGO_PKG_VERSION");
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const IO_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub enum UpdateMsg {
     VersionChecked(Result<Option<String>, String>),
@@ -24,6 +27,14 @@ fn release_asset_name() -> Option<&'static str> {
     }
 }
 
+fn http_agent() -> ureq::Agent {
+    ureq::AgentBuilder::new()
+        .timeout_connect(CONNECT_TIMEOUT)
+        .timeout_read(IO_TIMEOUT)
+        .timeout_write(IO_TIMEOUT)
+        .build()
+}
+
 /// Returns `Some(tag)` if the latest GitHub release is newer than the current
 /// binary version, or `None` if already up to date.
 pub fn check_version() -> Result<Option<String>, String> {
@@ -32,7 +43,8 @@ pub fn check_version() -> Result<Option<String>, String> {
     }
 
     let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
-    let resp: serde_json::Value = ureq::get(&url)
+    let resp: serde_json::Value = http_agent()
+        .get(&url)
         .set("User-Agent", "zellij-tab-config")
         .call()
         .map_err(|e| e.to_string())?
@@ -54,9 +66,10 @@ pub fn download_and_replace(tag: &str) -> Result<(), String> {
         .ok_or_else(|| format!("self-update is only supported on Linux x86_64, not {} {}", std::env::consts::OS, std::env::consts::ARCH))?;
     let url = format!("https://github.com/{REPO}/releases/download/{tag}/{asset}");
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let tmp = exe.with_extension("tmp");
+    let tmp = exe.with_extension(format!("download-{}.tmp", std::process::id()));
 
-    let resp = ureq::get(&url)
+    let resp = http_agent()
+        .get(&url)
         .set("User-Agent", "zellij-tab-config")
         .call()
         .map_err(|e| e.to_string())?;
@@ -76,7 +89,10 @@ pub fn download_and_replace(tag: &str) -> Result<(), String> {
     }
 
     // Atomic replace — safe on Linux even while the binary is running.
-    std::fs::rename(&tmp, &exe).map_err(|e| e.to_string())?;
+    if let Err(err) = std::fs::rename(&tmp, &exe) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(err.to_string());
+    }
 
     Ok(())
 }

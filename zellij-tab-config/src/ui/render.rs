@@ -67,6 +67,10 @@ impl App {
             InputMode::ThemeLoadDeleteConfirm => {
                 self.render_theme_load_mode(frame);
             }
+            InputMode::UpdateRestartConfirm => {
+                self.render_preview(frame);
+                self.render_update_restart_overlay(frame);
+            }
             InputMode::Help => self.render_help_mode(frame),
         }
     }
@@ -460,6 +464,7 @@ impl App {
                 InputMode::ThemeLoad => (" LOAD   ", sel_fg, sel_bg),
                 InputMode::ThemeLoadRename => (" RENAME ", sel_fg, sel_bg),
                 InputMode::ThemeLoadDeleteConfirm => (" DELETE ", Color::Rgb(255, 100, 100), Color::Rgb(80, 20, 20)),
+                InputMode::UpdateRestartConfirm => (" UPDATE ", sel_fg, sel_bg),
                 InputMode::Help => (" HELP   ", sel_fg, sel_bg),
             }
         };
@@ -501,6 +506,7 @@ impl App {
             InputMode::Preview => &[
                 ("↑↓←→", "NAVIGATE",   "NAV"),
                 ("c",    "COLOR",      "CLR"),
+                ("U",    "UPDATE",     "UPD"),
                 ("s",    "SAVE AS",    "SAVE"),
                 ("l",    "LOAD",       "LD"),
                 ("a",    "SAVE+APPLY", "APPLY"),
@@ -543,7 +549,14 @@ impl App {
                 ("y", "CONFIRM", "Y"),
                 ("n", "CANCEL",  "N"),
             ],
+            InputMode::UpdateRestartConfirm => &[
+                ("Enter", "RESTART", "OK"),
+                ("l",     "LATER",   "L"),
+                ("Esc",   "LATER",   "X"),
+            ],
             InputMode::Help => &[
+                ("↑↓", "SCROLL", "SCR"),
+                ("Pg", "JUMP",   "PG"),
                 ("Esc", "CLOSE", "X"),
             ],
         };
@@ -1205,78 +1218,278 @@ impl App {
     }
 
     fn render_help_overlay(&self, frame: &mut Frame) {
-        let entries: &[(&str, &str)] = &[
-            // Normal mode
-            ("↑/j  ↓/k  ← →",  "Navigate preview elements"),
-            ("Tab",             "Toggle FG / BG (pane borders: FG only)"),
-            ("c",               "Open color picker for selected color"),
-            ("y",               "Yank (copy) current color"),
-            ("p",               "Paste yanked color"),
-            ("u",               "Undo last color change"),
-            ("s",               "Save theme as… (prompts for name)"),
-            ("l",               "Open theme loader"),
-            ("a",               "Apply current theme to Zellij config"),
-            ("U",               "Install latest released binary (when available)"),
-            ("?",               "Toggle this help screen"),
-            ("q / Esc",         "Quit"),
-            ("",                ""),
-            // Color picker
-            ("Tab / Shift+Tab", "[Color picker] Move focus between controls"),
-            ("m",                "[Color picker] Switch RGB sliders / HSL field"),
-            ("f",                "[Color picker] Toggle FG / BG (non-pane)"),
-            ("Mouse drag",       "[Color picker] Drag in HSL field or lightness slider"),
-            ("← → ↑ ↓",         "[Color picker] Nudge focused control"),
-            ("Shift / Alt",      "[Color picker] Coarse / fine nudging"),
-            ("Enter",            "[Color picker] Edit focused field or confirm"),
-            ("#",                "[Color picker] Jump to hex field editing"),
-            ("Esc",              "[Color picker] Cancel"),
-            ("",                ""),
-            // Theme loader
-            ("type",            "[Load] Search — type to filter, Enter/↓ to navigate results"),
-            ("↑ ↓",            "[Load] Navigate themes"),
-            ("Enter",           "[Load] Load selected theme into editor"),
-            ("a",               "[Load] Apply selected theme to Zellij"),
-            ("d",               "[Load] Filter: built-in themes"),
-            ("s",               "[Load] Filter: saved themes"),
-            ("r",               "[Load] Rename selected saved theme"),
-            ("x",               "[Load] Delete selected saved theme"),
-            ("Esc",             "[Load] Clear search / cancel"),
+        const PANEL_BG: Color = Color::Rgb(22, 22, 26);
+        const PANEL_BORDER: Color = Color::Rgb(90, 85, 115);
+        const PANEL_MUTED: Color = Color::Rgb(120, 120, 145);
+        const PANEL_TEXT: Color = Color::Rgb(212, 212, 230);
+        const ACCENT_BG: Color = Color::Rgb(97, 88, 150);
+        const ACCENT_FG: Color = Color::Rgb(242, 240, 255);
+        const SUBTLE_BG: Color = Color::Rgb(54, 50, 74);
+        const SUBTLE_FG: Color = Color::Rgb(214, 210, 235);
+        const DIVIDER: Color = Color::Rgb(50, 48, 64);
+
+        enum HelpRow<'a> {
+            Section(&'a str),
+            Entry(&'a str, &'a str),
+            Spacer,
+        }
+
+        let rows: &[HelpRow<'_>] = &[
+            HelpRow::Section("Preview"),
+            HelpRow::Entry("↑/j  ↓/k  ← →", "Navigate preview elements"),
+            HelpRow::Entry("Tab", "Toggle FG / BG (pane borders: FG only)"),
+            HelpRow::Entry("c", "Open color picker for selected color"),
+            HelpRow::Entry("y", "Yank (copy) current color"),
+            HelpRow::Entry("p", "Paste yanked color"),
+            HelpRow::Entry("u", "Undo last color change"),
+            HelpRow::Entry("s", "Save theme as… (prompts for name)"),
+            HelpRow::Entry("l", "Open theme loader"),
+            HelpRow::Entry("a", "Apply current theme to Zellij config"),
+            HelpRow::Entry("U", "Install latest released binary on Linux x86_64 when available"),
+            HelpRow::Entry("?", "Toggle this help screen"),
+            HelpRow::Entry("q / Esc", "Quit"),
+            HelpRow::Spacer,
+            HelpRow::Section("Color Picker"),
+            HelpRow::Entry("Tab / Shift+Tab", "Move focus between controls"),
+            HelpRow::Entry("m", "Switch RGB sliders / HSL field"),
+            HelpRow::Entry("f", "Toggle FG / BG (non-pane)"),
+            HelpRow::Entry("Mouse drag", "Drag in HSL field or lightness slider"),
+            HelpRow::Entry("← → ↑ ↓", "Nudge the focused control"),
+            HelpRow::Entry("Shift / Alt", "Coarse / fine nudging"),
+            HelpRow::Entry("Enter", "Edit the focused value field or confirm"),
+            HelpRow::Entry("#", "Jump to hex field editing"),
+            HelpRow::Entry("Esc", "Cancel"),
+            HelpRow::Spacer,
+            HelpRow::Section("Theme Loader"),
+            HelpRow::Entry("type", "Search and filter themes"),
+            HelpRow::Entry("Enter / ↓", "Commit search and move into results"),
+            HelpRow::Entry("↑ ↓", "Navigate themes"),
+            HelpRow::Entry("Enter", "Load selected theme into editor"),
+            HelpRow::Entry("a", "Apply selected theme to Zellij"),
+            HelpRow::Entry("d", "Filter built-in themes"),
+            HelpRow::Entry("s", "Filter saved themes"),
+            HelpRow::Entry("r", "Rename selected saved theme"),
+            HelpRow::Entry("x", "Delete selected saved theme"),
+            HelpRow::Entry("Esc", "Clear search or cancel"),
         ];
 
-        let height = (entries.len() as u16 + 4).min(frame.area().height.saturating_sub(4));
-        let area = centered_rect(frame.area(), 68, height);
+        let overlay_h = 24u16.min(frame.area().height.saturating_sub(2));
+        let overlay_w = 84u16.min(frame.area().width.saturating_sub(4));
+        let area = centered_rect(frame.area(), overlay_w, overlay_h);
         frame.render_widget(Clear, area);
 
-        let key_style   = Style::new().fg(Color::Rgb(167, 139, 250)).add_modifier(Modifier::BOLD);
-        let desc_style  = Style::new().fg(Color::White);
-        let empty_style = Style::new();
+        let outer_block = Block::bordered()
+            .border_type(BorderType::Rounded)
+            .border_style(Style::new().fg(PANEL_BORDER))
+            .style(Style::new().bg(PANEL_BG));
+        let inner = outer_block.inner(area);
+        frame.render_widget(outer_block, area);
 
-        let lines: Vec<Line> = entries
+        let [header_rect, body_rect, footer_rect] = Layout::vertical([
+            Constraint::Length(2),
+            Constraint::Min(8),
+            Constraint::Length(2),
+        ])
+        .areas(inner);
+
+        let title = vec![Span::styled(
+            " Help ",
+            Style::new().fg(PANEL_TEXT).add_modifier(Modifier::BOLD),
+        )];
+        let scroll_label = format!("{:>2} rows", rows.len());
+        let mut header_spans = title;
+        let title_w: usize = header_spans.iter().map(|span| span.width()).sum();
+        let right_spans = vec![Span::styled(scroll_label, Style::new().fg(PANEL_MUTED))];
+        let right_w: usize = right_spans.iter().map(|span| span.width()).sum();
+        let gap = (header_rect.width as usize).saturating_sub(title_w + right_w);
+        header_spans.push(Span::styled(" ".repeat(gap), Style::new().bg(PANEL_BG)));
+        header_spans.extend(right_spans);
+        frame.render_widget(
+            Paragraph::new(Line::from(header_spans)).style(Style::new().bg(PANEL_BG)),
+            Rect {
+                x: header_rect.x,
+                y: header_rect.y,
+                width: header_rect.width,
+                height: 1,
+            },
+        );
+
+        let header_hint = vec![
+            Span::styled(" ↑↓ ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+            Span::styled(" scroll  ", Style::new().fg(PANEL_MUTED)),
+            Span::styled(" PgUp/PgDn ", Style::new().fg(SUBTLE_FG).bg(SUBTLE_BG).add_modifier(Modifier::BOLD)),
+            Span::styled(" jump", Style::new().fg(PANEL_MUTED)),
+        ];
+        frame.render_widget(
+            Paragraph::new(Line::from(header_hint)).style(Style::new().bg(PANEL_BG)),
+            Rect {
+                x: header_rect.x,
+                y: header_rect.y + 1,
+                width: header_rect.width,
+                height: 1,
+            },
+        );
+
+        let [list_rect, detail_rect] =
+            Layout::horizontal([Constraint::Percentage(66), Constraint::Percentage(34)]).areas(body_rect);
+
+        frame.render_widget(
+            Paragraph::new("").block(
+                Block::default()
+                    .borders(ratatui::widgets::Borders::RIGHT)
+                    .border_style(Style::new().fg(DIVIDER)),
+            ),
+            list_rect,
+        );
+
+        let list_inner = Rect {
+            x: list_rect.x,
+            y: list_rect.y,
+            width: list_rect.width.saturating_sub(1),
+            height: list_rect.height,
+        };
+        let detail_inner = Rect {
+            x: detail_rect.x + 1,
+            y: detail_rect.y,
+            width: detail_rect.width.saturating_sub(2),
+            height: detail_rect.height,
+        };
+
+        let visible_rows = list_inner.height as usize;
+        let max_scroll = rows.len().saturating_sub(visible_rows) as u16;
+        let scroll = self.help_scroll.min(max_scroll);
+
+        let list_lines: Vec<Line> = rows
             .iter()
-            .map(|(key, desc)| {
-                if key.is_empty() {
-                    Line::from(Span::styled("", empty_style))
-                } else {
-                    Line::from(vec![
-                        Span::styled(format!("  {:<20}", key), key_style),
-                        Span::styled(format!(" {}", desc), desc_style),
-                    ])
-                }
+            .map(|row| match row {
+                HelpRow::Section(title) => Line::from(vec![
+                    Span::styled(" ", Style::new().bg(PANEL_BG)),
+                    Span::styled(
+                        format!(" {} ", title),
+                        Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                HelpRow::Entry(key, desc) => Line::from(vec![
+                    Span::styled(" ", Style::new().bg(PANEL_BG)),
+                    Span::styled(format!("{:<18}", key), Style::new().fg(PANEL_TEXT).add_modifier(Modifier::BOLD)),
+                    Span::styled(desc.to_string(), Style::new().fg(PANEL_MUTED)),
+                ]),
+                HelpRow::Spacer => Line::from(""),
             })
             .collect();
 
+        frame.render_widget(
+            Paragraph::new(list_lines)
+                .scroll((scroll, 0))
+                .style(Style::new().bg(PANEL_BG)),
+            list_inner,
+        );
+
+        let detail_lines = vec![
+            Line::from(Span::styled(
+                " Navigation",
+                Style::new().fg(PANEL_MUTED).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                " Use cursor keys or j/k to scroll this help view.",
+                Style::new().fg(PANEL_TEXT),
+            )),
+            Line::from(Span::styled(
+                " Press uppercase U in preview mode to update when the status bar says one is available.",
+                Style::new().fg(PANEL_MUTED),
+            )),
+            Line::from(Span::styled(
+                " PgUp/PgDn moves faster. Home/End jumps to top or bottom.",
+                Style::new().fg(PANEL_MUTED),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                " Overlay Style",
+                Style::new().fg(PANEL_MUTED).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                " This panel now uses the same rounded frame, accent pills, and split layout as the picker and loader.",
+                Style::new().fg(PANEL_TEXT),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                " Scroll",
+                Style::new().fg(PANEL_MUTED).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                format!(" Showing from row {} of {}", scroll.saturating_add(1), rows.len()),
+                Style::new().fg(if max_scroll > 0 { ACCENT_FG } else { PANEL_TEXT }),
+            )),
+        ];
+        frame.render_widget(
+            Paragraph::new(detail_lines).style(Style::new().bg(PANEL_BG)),
+            detail_inner,
+        );
+
+        let footer_spans = vec![
+            Span::styled(" ↑↓ ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+            Span::styled(" scroll  ", Style::new().fg(PANEL_MUTED)),
+            Span::styled(" Home/End ", Style::new().fg(SUBTLE_FG).bg(SUBTLE_BG).add_modifier(Modifier::BOLD)),
+            Span::styled(" jump  ", Style::new().fg(PANEL_MUTED)),
+            Span::styled(" Esc ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+            Span::styled(" close", Style::new().fg(PANEL_MUTED)),
+        ];
+        frame.render_widget(
+            Paragraph::new(Line::from(footer_spans)).style(Style::new().bg(PANEL_BG)),
+            footer_rect,
+        );
+    }
+
+    fn render_update_restart_overlay(&self, frame: &mut Frame) {
+        const PANEL_BG: Color = Color::Rgb(22, 22, 26);
+        const PANEL_BORDER: Color = Color::Rgb(90, 85, 115);
+        const PANEL_MUTED: Color = Color::Rgb(120, 120, 145);
+        const PANEL_TEXT: Color = Color::Rgb(212, 212, 230);
+        const ACCENT_BG: Color = Color::Rgb(97, 88, 150);
+        const ACCENT_FG: Color = Color::Rgb(242, 240, 255);
+        const SUBTLE_BG: Color = Color::Rgb(54, 50, 74);
+        const SUBTLE_FG: Color = Color::Rgb(214, 210, 235);
+
+        let area = centered_rect(frame.area(), 58, 10);
+        frame.render_widget(Clear, area);
+
         let block = Block::bordered()
             .border_type(BorderType::Rounded)
-            .title(" Help ")
-            .title_style(Style::new().fg(Color::Rgb(167, 139, 250)).add_modifier(Modifier::BOLD))
-            .border_style(Style::new().fg(Color::Rgb(90, 85, 115)))
-            .style(Style::new().bg(Color::Rgb(22, 22, 26)));
+            .title(" Update Installed ")
+            .title_style(Style::new().fg(ACCENT_FG).add_modifier(Modifier::BOLD))
+            .border_style(Style::new().fg(PANEL_BORDER))
+            .style(Style::new().bg(PANEL_BG));
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+
+        let lines = vec![
+            Line::from(Span::styled(
+                " The new build is ready.",
+                Style::new().fg(PANEL_TEXT).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                " Restart now to launch the updated binary, or choose later and keep working.",
+                Style::new().fg(PANEL_MUTED),
+            )),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(
+                    " Enter ",
+                    Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" restart now  ", Style::new().fg(PANEL_MUTED)),
+                Span::styled(
+                    " L ",
+                    Style::new().fg(SUBTLE_FG).bg(SUBTLE_BG).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" later", Style::new().fg(PANEL_MUTED)),
+            ]),
+        ];
 
         frame.render_widget(
-            Paragraph::new(lines)
-                .block(block)
-                .style(Style::new().bg(Color::Rgb(22, 22, 26))),
-            area,
+            Paragraph::new(lines).style(Style::new().bg(PANEL_BG)),
+            inner,
         );
     }
 
