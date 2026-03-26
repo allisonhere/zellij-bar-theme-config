@@ -17,9 +17,20 @@ fn parse_ver(s: &str) -> Option<(u32, u32, u32)> {
     Some((major, minor, patch))
 }
 
+fn release_asset_name() -> Option<&'static str> {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("linux", "x86_64") => Some("zellij-tab-config-linux-x86_64"),
+        _ => None,
+    }
+}
+
 /// Returns `Some(tag)` if the latest GitHub release is newer than the current
 /// binary version, or `None` if already up to date.
 pub fn check_version() -> Result<Option<String>, String> {
+    if release_asset_name().is_none() {
+        return Ok(None);
+    }
+
     let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
     let resp: serde_json::Value = ureq::get(&url)
         .set("User-Agent", "zellij-tab-config")
@@ -39,9 +50,9 @@ pub fn check_version() -> Result<Option<String>, String> {
 
 /// Downloads the release binary for `tag` and replaces the running executable.
 pub fn download_and_replace(tag: &str) -> Result<(), String> {
-    let url = format!(
-        "https://github.com/{REPO}/releases/download/{tag}/zellij-tab-config-linux-x86_64"
-    );
+    let asset = release_asset_name()
+        .ok_or_else(|| format!("self-update is only supported on Linux x86_64, not {} {}", std::env::consts::OS, std::env::consts::ARCH))?;
+    let url = format!("https://github.com/{REPO}/releases/download/{tag}/{asset}");
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let tmp = exe.with_extension("tmp");
 
@@ -68,4 +79,25 @@ pub fn download_and_replace(tag: &str) -> Result<(), String> {
     std::fs::rename(&tmp, &exe).map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_ver, release_asset_name};
+
+    #[test]
+    fn parses_versions_with_optional_v_prefix() {
+        assert_eq!(parse_ver("v0.3.5"), Some((0, 3, 5)));
+        assert_eq!(parse_ver("0.3.5"), Some((0, 3, 5)));
+    }
+
+    #[test]
+    fn release_asset_matches_supported_targets() {
+        match (std::env::consts::OS, std::env::consts::ARCH) {
+            ("linux", "x86_64") => {
+                assert_eq!(release_asset_name(), Some("zellij-tab-config-linux-x86_64"));
+            }
+            _ => assert_eq!(release_asset_name(), None),
+        }
+    }
 }
