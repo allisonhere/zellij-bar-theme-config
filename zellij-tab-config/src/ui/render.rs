@@ -1,4 +1,7 @@
 use crate::theme::ThemeComponentType;
+use crate::ui::color_picker::{
+    contrast_text, hsv_field_cell, picker_layout, ColorPickerFocus, ColorPickerMode, EditableField,
+};
 use crate::ui::state::{App, InputMode, PreviewAttribute, PreviewElement};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -44,43 +47,8 @@ fn clip_text(text: &str, max_chars: usize) -> String {
     text.chars().take(max_chars).collect()
 }
 
-pub fn render_slider_lines(
-    label: &str,
-    value: u8,
-    is_selected: bool,
-    color: Color,
-) -> Vec<Line<'static>> {
-    let slider_width = 30usize;
-    let filled = ((value as f32 / 255.0) * slider_width as f32) as usize;
-    let bar: String = (0..slider_width)
-        .map(|i| if i < filled { '█' } else { '░' })
-        .collect();
-    let value_str = format!("{:>3}", value);
-    let label = label.to_string();
-
-    if is_selected {
-        vec![Line::from(vec![
-            Span::raw(" "),
-            Span::styled(
-                format!("{} ", label),
-                Style::new().fg(color).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(bar, Style::new().fg(color).add_modifier(Modifier::BOLD)),
-            Span::raw(" "),
-            Span::styled(
-                value_str,
-                Style::new().fg(color).add_modifier(Modifier::BOLD),
-            ),
-        ])]
-    } else {
-        vec![Line::from(vec![
-            Span::raw(" "),
-            Span::raw(format!("{} ", label)),
-            Span::styled(bar, Style::new().fg(Color::DarkGray)),
-            Span::raw(" "),
-            Span::raw(value_str),
-        ])]
-    }
+fn tui_rgb(color: crate::theme::RgbColor) -> Color {
+    Color::Rgb(color.r, color.g, color.b)
 }
 
 impl App {
@@ -540,26 +508,16 @@ impl App {
                 ("q",    "QUIT",       "QT"),
             ],
             InputMode::ColorPicker => {
-                const WITH_TAB: &[(&str, &str, &str)] = &[
-                    ("↑↓",     "CHANNEL", "CH"),
-                    ("←→",     "±5",      "±5"),
-                    ("S+←→",   "±1",      "±1"),
-                    ("PgUp/Dn","±25",     "±25"),
+                const BINDINGS: &[(&str, &str, &str)] = &[
+                    ("tab",    "FOCUS",   "TAB"),
+                    ("m",      "MODE",    "MD"),
+                    ("f",      "FG/BG",   "F/B"),
+                    ("drag",   "PICK",    "PK"),
                     ("#",      "HEX",     "HX"),
-                    ("tab",    "FG/BG",   "F/B"),
-                    ("Enter",  "KEEP",    "OK"),
+                    ("Enter",  "EDIT/OK", "OK"),
                     ("Esc",    "CANCEL",  "ESC"),
                 ];
-                const WITHOUT_TAB: &[(&str, &str, &str)] = &[
-                    ("↑↓",     "CHANNEL", "CH"),
-                    ("←→",     "±5",      "±5"),
-                    ("S+←→",   "±1",      "±1"),
-                    ("PgUp/Dn","±25",     "±25"),
-                    ("#",      "HEX",     "HX"),
-                    ("Enter",  "KEEP",    "OK"),
-                    ("Esc",    "CANCEL",  "ESC"),
-                ];
-                if self.selected_element.is_frame() { WITHOUT_TAB } else { WITH_TAB }
+                BINDINGS
             }
             InputMode::ThemeNameInput | InputMode::ThemeNameInputApply => &[
                 ("type",  "NAME",   "NM"),
@@ -735,13 +693,6 @@ impl App {
     }
 
     fn render_color_picker_overlay(&self, frame: &mut Frame) {
-        let area = frame.area();
-        let overlay_w = 58u16.min(area.width.saturating_sub(4));
-        let overlay_h = 18u16.min(area.height.saturating_sub(4));
-        let overlay_area = centered_rect(area, overlay_w, overlay_h);
-
-        frame.render_widget(Clear, overlay_area);
-
         const OB_BG: Color = Color::Rgb(22, 22, 26);
         const OB_BORDER: Color = Color::Rgb(90, 85, 115);
         const OB_TEXT: Color = Color::Rgb(212, 212, 230);
@@ -751,153 +702,454 @@ impl App {
         const ACCENT_FG: Color = Color::Rgb(242, 240, 255);
         const SUBTLE_BG: Color = Color::Rgb(54, 50, 74);
         const SUBTLE_FG: Color = Color::Rgb(214, 210, 235);
+        const SURFACE_BG: Color = Color::Rgb(26, 26, 32);
+        const SURFACE_FOCUS_BG: Color = Color::Rgb(34, 31, 46);
 
-        let r = self.color_editor.r;
-        let g = self.color_editor.g;
-        let b = self.color_editor.b;
-        let cur_hex = format!("#{:02x}{:02x}{:02x}", r, g, b);
-        let cur_color = Color::Rgb(r, g, b);
+        let rects = picker_layout(frame.area(), self.color_editor.mode);
+        frame.render_widget(Clear, rects.overlay);
 
-        // Derive "before" color from saved original_component
-        let orig_color = self.original_component.as_ref().map(|orig| {
-            let c = match self.selected_attribute {
-                PreviewAttribute::Base => orig.base,
-                PreviewAttribute::Background => orig.background,
-            };
-            (
-                Color::Rgb(c.r, c.g, c.b),
-                format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b),
-            )
-        });
-
-        let element_name = self.selected_element.label();
-        let attr_name = self.selected_attribute.label();
-
-        let mut lines: Vec<Line> = Vec::new();
-
-        let title_str = String::from(" Color Picker ");
-        let title_span =
-            Span::styled(title_str.clone(), Style::new().fg(OB_TEXT).add_modifier(Modifier::BOLD));
-        let attr_pill: Vec<Span> = vec![
-            Span::styled("", Style::new().fg(ACCENT_BG).bg(OB_BG)),
-            Span::styled(
-                format!(" {} ", attr_name),
-                Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("", Style::new().fg(SUBTLE_BG).bg(ACCENT_BG)),
-            Span::styled(
-                format!(" {} ", element_name),
-                Style::new().fg(SUBTLE_FG).bg(SUBTLE_BG),
-            ),
-            Span::styled("", Style::new().fg(SUBTLE_BG).bg(OB_BG)),
-        ];
-        let title_w = title_span.width();
-        let pill_w: usize = attr_pill.iter().map(|s| s.width()).sum();
-        let inner_w = overlay_w.saturating_sub(2) as usize;
-        let gap = inner_w.saturating_sub(title_w + pill_w);
-        let mut header_spans = vec![title_span];
-        header_spans.push(Span::styled(" ".repeat(gap), Style::new().bg(OB_BG)));
-        header_spans.extend(attr_pill);
-        lines.push(Line::from(header_spans));
-
-        // Before/after swatch
-        if let Some((before_color, before_hex)) = orig_color {
-            lines.push(Line::from(vec![
-                Span::raw(" "),
-                Span::styled("        ", Style::new().bg(before_color)),
-                Span::styled("  →  ", Style::new().fg(OB_DIM)),
-                Span::styled("        ", Style::new().bg(cur_color)),
-                Span::raw("  "),
-                Span::styled(
-                    format!("{} → {}", before_hex, cur_hex),
-                    Style::new().fg(OB_TEXT),
-                ),
-            ]));
-        } else {
-            lines.push(Line::from(vec![
-                Span::raw(" "),
-                Span::styled("        ", Style::new().bg(cur_color)),
-                Span::raw("  "),
-                Span::styled(
-                    format!("{} — {}", attr_name, cur_hex),
-                    Style::new().fg(OB_TEXT).add_modifier(Modifier::BOLD),
-                ),
-            ]));
-        }
-
-        lines.push(Line::from(""));
-
-        // RGB sliders
-        for (label, value, ch) in [("R", r, 0usize), ("G", g, 1), ("B", b, 2)] {
-            let is_sel = self.color_editor.editing_channel == ch;
-            let color = match ch {
-                0 => Color::Red,
-                1 => Color::Green,
-                _ => Color::Blue,
-            };
-            lines.extend(render_slider_lines(label, value, is_sel, color));
-            lines.push(Line::from(""));
-        }
-
-        // RGB decimal
-        lines.push(Line::from(vec![Span::styled(
-            format!("  rgb({} {} {})", r, g, b),
-            Style::new().fg(OB_MUTED),
-        )]));
-        lines.push(Line::from(""));
-
-        if let Some(ref hex_str) = self.color_editor.hex_input {
-            let display = format!("  #{:<6}█", hex_str);
-            lines.push(Line::from(vec![
-                Span::styled(
-                    display,
-                    Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled("  type hex, Enter to apply, Esc to cancel", Style::new().fg(OB_MUTED)),
-            ]));
-        } else {
-            lines.push(Line::from(vec![Span::styled(
-                "  press # to enter hex code",
-                Style::new().fg(OB_DIM),
-            )]));
-        }
-        lines.push(Line::from(""));
-
-        let mk_pill = |key: &str, action: &str| -> Vec<Span<'static>> {
-            vec![
-                Span::styled("", Style::new().fg(ACCENT_BG).bg(OB_BG)),
-                Span::styled(
-                    format!(" {} ", key),
-                    Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled("", Style::new().fg(SUBTLE_BG).bg(ACCENT_BG)),
-                Span::styled(format!(" {} ", action), Style::new().fg(SUBTLE_FG).bg(SUBTLE_BG)),
-                Span::styled("", Style::new().fg(SUBTLE_BG).bg(OB_BG)),
-                Span::raw(" "),
-            ]
-        };
-        let row1: Vec<Span> = [("↑↓","ch"), ("←→","±5"), ("S+←→","±1"), ("#","hex")]
-            .iter().flat_map(|(k,a)| mk_pill(k, a)).collect();
-        let row2: Vec<Span> = if self.selected_element.is_frame() {
-            [("↵","keep"), ("Esc","cancel")]
-                .iter().flat_map(|(k,a)| mk_pill(k, a)).collect()
-        } else {
-            [("tab","fg/bg"), ("↵","keep"), ("Esc","cancel")]
-                .iter().flat_map(|(k,a)| mk_pill(k, a)).collect()
-        };
-        lines.push(Line::from([vec![Span::raw(" ")], row1].concat()));
-        lines.push(Line::from([vec![Span::raw(" ")], row2].concat()));
-
-        let block = Block::bordered()
+        let outer = Block::bordered()
             .border_type(BorderType::Rounded)
             .border_style(Style::new().fg(OB_BORDER))
             .style(Style::new().bg(OB_BG));
+        let inner = outer.inner(rects.overlay);
+        frame.render_widget(outer, rects.overlay);
+
+        let [header, body, footer] = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Min(16),
+            Constraint::Length(2),
+        ])
+        .areas(inner);
+        let [main_col, side_col] =
+            Layout::horizontal([Constraint::Percentage(62), Constraint::Percentage(38)]).areas(body);
+        let [preview_area, _fields_area] =
+            Layout::vertical([Constraint::Length(5), Constraint::Fill(1)]).areas(side_col);
+
+        let current_rgb = self.color_editor.to_rgb();
+        let current_hex = self.color_editor.hex();
+        let hsl = self.color_editor.hsl;
+        let hsv = self.color_editor.hsv();
+
+        let original_rgb = self.original_component.as_ref().map(|orig| match self.selected_attribute {
+            PreviewAttribute::Base => orig.base,
+            PreviewAttribute::Background => orig.background,
+        });
+
+        let mk_pill = |key: &str, label: &str, active: bool| -> Vec<Span<'static>> {
+            let (key_bg, key_fg, lbl_bg, lbl_fg) = if active {
+                (ACCENT_BG, ACCENT_FG, SUBTLE_BG, SUBTLE_FG)
+            } else {
+                (SUBTLE_BG, SUBTLE_FG, OB_BG, OB_MUTED)
+            };
+            vec![
+                Span::styled("", Style::new().fg(key_bg).bg(OB_BG)),
+                Span::styled(
+                    format!(" {} ", key),
+                    Style::new().fg(key_fg).bg(key_bg).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("", Style::new().fg(lbl_bg).bg(key_bg)),
+                Span::styled(format!(" {} ", label), Style::new().fg(lbl_fg).bg(lbl_bg)),
+                Span::styled("", Style::new().fg(lbl_bg).bg(OB_BG)),
+            ]
+        };
+
+        let mut header_spans = vec![Span::styled(
+            " Color Picker ",
+            Style::new().fg(OB_TEXT).add_modifier(Modifier::BOLD),
+        )];
+        let mode_focused = self.color_editor.focus == ColorPickerFocus::ModeToggle;
+        let mode_pills = [
+            if mode_focused {
+                vec![Span::styled("› ", Style::new().fg(ACCENT_FG).add_modifier(Modifier::BOLD))]
+            } else {
+                vec![]
+            },
+            mk_pill(
+                "M",
+                "rgb",
+                self.color_editor.mode == ColorPickerMode::RgbSliders,
+            ),
+            vec![Span::raw(" ")],
+            mk_pill(
+                "M",
+                "hsl",
+                self.color_editor.mode == ColorPickerMode::HslField,
+            ),
+            if mode_focused {
+                vec![Span::styled(" ‹", Style::new().fg(ACCENT_FG).add_modifier(Modifier::BOLD))]
+            } else {
+                vec![]
+            },
+        ]
+        .concat();
+        let right_pill = {
+            let attr = self.selected_attribute.label();
+            let name = self.selected_element.label();
+            vec![
+                Span::styled("", Style::new().fg(ACCENT_BG).bg(OB_BG)),
+                Span::styled(
+                    format!(" {} ", attr),
+                    Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("", Style::new().fg(SUBTLE_BG).bg(ACCENT_BG)),
+                Span::styled(format!(" {} ", name), Style::new().fg(SUBTLE_FG).bg(SUBTLE_BG)),
+                Span::styled("", Style::new().fg(SUBTLE_BG).bg(OB_BG)),
+            ]
+        };
+        let left_w: usize = header_spans.iter().map(|s| s.width()).sum::<usize>()
+            + mode_pills.iter().map(|s| s.width()).sum::<usize>()
+            + 1;
+        let right_w: usize = right_pill.iter().map(|s| s.width()).sum();
+        let gap = header.width as usize - left_w - right_w;
+        header_spans.push(Span::raw(" "));
+        header_spans.extend(mode_pills);
+        header_spans.push(Span::styled(" ".repeat(gap.max(1)), Style::new().bg(OB_BG)));
+        header_spans.extend(right_pill);
+        frame.render_widget(
+            Paragraph::new(Line::from(header_spans)).style(Style::new().bg(OB_BG)),
+            header,
+        );
 
         frame.render_widget(
-            Paragraph::new(lines)
-                .block(block)
+            Block::default().style(Style::new().bg(SURFACE_BG)),
+            main_col,
+        );
+        frame.render_widget(
+            Block::default().style(Style::new().bg(OB_BG)),
+            side_col,
+        );
+
+        match self.color_editor.mode {
+            ColorPickerMode::RgbSliders => {
+                let channels_focus = matches!(self.color_editor.focus, ColorPickerFocus::RgbSlider(_));
+                let channels_block = Block::bordered()
+                    .title(" Channels ")
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::new().fg(if channels_focus { ACCENT_BG } else { OB_BORDER }))
+                    .style(Style::new().bg(SURFACE_BG));
+                let channels_inner = channels_block.inner(rects.main_view);
+                frame.render_widget(channels_block, rects.main_view);
+                let slider_width = channels_inner.width.saturating_sub(8) as usize;
+                let labels = ["R", "G", "B"];
+                for (idx, label) in labels.into_iter().enumerate() {
+                    let row_rect = Rect {
+                        x: channels_inner.x,
+                        y: channels_inner.y + (idx as u16 * 2),
+                        width: channels_inner.width,
+                        height: 1,
+                    };
+                    let value = self.color_editor.rgb[idx];
+                    let filled = ((value as f32 / 255.0) * slider_width as f32).round() as usize;
+                    let bar: String = (0..slider_width)
+                        .map(|i| if i < filled { '█' } else { '░' })
+                        .collect();
+                    let is_focus = self.color_editor.focus == ColorPickerFocus::RgbSlider(idx);
+                    let color = match idx {
+                        0 => Color::Rgb(255, 96, 96),
+                        1 => Color::Rgb(106, 220, 124),
+                        _ => Color::Rgb(102, 186, 255),
+                    };
+                    let line = Line::from(vec![
+                        Span::styled(
+                            format!(" {} ", label),
+                            Style::new()
+                                .fg(if is_focus { ACCENT_FG } else { OB_TEXT })
+                                .bg(if is_focus { ACCENT_BG } else { SURFACE_BG })
+                                .add_modifier(if is_focus { Modifier::BOLD } else { Modifier::empty() }),
+                        ),
+                        Span::styled(bar, Style::new().fg(color).bg(SURFACE_BG)),
+                        Span::styled(
+                            format!(" {:>3}", value),
+                            Style::new().fg(if is_focus { OB_TEXT } else { OB_MUTED }),
+                        ),
+                    ]);
+                    frame.render_widget(Paragraph::new(line).style(Style::new().bg(SURFACE_BG)), row_rect);
+                }
+                frame.render_widget(
+                    Paragraph::new(vec![
+                        Line::from(""),
+                        Line::from(Span::styled(
+                            " RGB sliders for exact channel edits",
+                            Style::new().fg(OB_TEXT).add_modifier(Modifier::BOLD),
+                        )),
+                        Line::from(Span::styled(
+                            " Press M to switch to the HSL field picker.",
+                            Style::new().fg(OB_MUTED),
+                        )),
+                        Line::from(""),
+                        Line::from(Span::styled(
+                            format!(" Current  {}", current_hex),
+                            Style::new().fg(OB_TEXT),
+                        )),
+                        Line::from(Span::styled(
+                            format!(" HSV {:.0} / {:.0}% / {:.0}%", hsv.hue, hsv.saturation, hsv.value),
+                            Style::new().fg(OB_MUTED),
+                        )),
+                    ])
+                    .style(Style::new().bg(SURFACE_BG)),
+                    Rect {
+                        x: channels_inner.x,
+                        y: channels_inner.y + 6,
+                        width: channels_inner.width,
+                        height: channels_inner.height.saturating_sub(6),
+                    },
+                );
+            }
+            ColorPickerMode::HslField => {
+                let field_focus = self.color_editor.focus == ColorPickerFocus::HslField;
+                let field_block = Block::bordered()
+                    .title(if field_focus { " Color Field ● " } else { " Color Field " })
+                    .title_style(
+                        Style::new()
+                            .fg(if field_focus { ACCENT_FG } else { OB_MUTED })
+                            .add_modifier(if field_focus { Modifier::BOLD } else { Modifier::empty() }),
+                    )
+                    .border_type(if field_focus { BorderType::Double } else { BorderType::Rounded })
+                    .border_style(Style::new().fg(if field_focus { ACCENT_BG } else { OB_BORDER }))
+                    .style(Style::new().bg(if field_focus { SURFACE_FOCUS_BG } else { SURFACE_BG }));
+                let field_area = field_block.inner(rects.main_view);
+                frame.render_widget(field_block, rects.main_view);
+                for row in 0..field_area.height {
+                    let mut spans = Vec::with_capacity(field_area.width as usize);
+                    for col in 0..field_area.width {
+                        let x_frac = col as f32 / field_area.width.saturating_sub(1).max(1) as f32;
+                        let top_frac = (row as f32 * 2.0) / (field_area.height.max(1) as f32 * 2.0 - 1.0);
+                        let bottom_frac = ((row as f32 * 2.0) + 1.0)
+                            / (field_area.height.max(1) as f32 * 2.0 - 1.0);
+                        let top = hsv_field_cell(x_frac * 360.0, (1.0 - top_frac) * 100.0, hsv.value);
+                        let bottom =
+                            hsv_field_cell(x_frac * 360.0, (1.0 - bottom_frac) * 100.0, hsv.value);
+                        let selected_col = ((hsv.hue / 360.0)
+                            * field_area.width.saturating_sub(1).max(1) as f32)
+                            .round() as u16;
+                        let selected_row = (((100.0 - hsv.saturation) / 100.0)
+                            * field_area.height.saturating_sub(1).max(1) as f32)
+                            .round() as u16;
+                        if col == selected_col && row == selected_row {
+                            let marker = contrast_text(current_rgb);
+                            spans.push(Span::styled(
+                                "◉",
+                                Style::new().fg(tui_rgb(marker)).bg(tui_rgb(current_rgb)).add_modifier(Modifier::BOLD),
+                            ));
+                        } else {
+                            spans.push(Span::styled(
+                                "▀",
+                                Style::new().fg(tui_rgb(top)).bg(tui_rgb(bottom)),
+                            ));
+                        }
+                    }
+                    frame.render_widget(
+                        Paragraph::new(Line::from(spans))
+                            .style(Style::new().bg(if field_focus { SURFACE_FOCUS_BG } else { SURFACE_BG })),
+                        Rect {
+                            x: field_area.x,
+                            y: field_area.y + row,
+                            width: field_area.width,
+                            height: 1,
+                        },
+                    );
+                }
+                let value_focus = self.color_editor.focus == ColorPickerFocus::LightnessSlider;
+                let value_block = Block::bordered()
+                    .title(if value_focus { " V ● " } else { " V " })
+                    .title_style(
+                        Style::new()
+                            .fg(if value_focus { ACCENT_FG } else { OB_MUTED })
+                            .add_modifier(if value_focus { Modifier::BOLD } else { Modifier::empty() }),
+                    )
+                    .border_type(if value_focus { BorderType::Double } else { BorderType::Rounded })
+                    .border_style(Style::new().fg(if value_focus { ACCENT_BG } else { OB_BORDER }))
+                    .style(Style::new().bg(if value_focus { SURFACE_FOCUS_BG } else { SURFACE_BG }));
+                let value_area = value_block.inner(rects.aux_slider);
+                frame.render_widget(value_block, rects.aux_slider);
+                let selected_row = (((100.0 - hsv.value) / 100.0)
+                    * value_area.height.saturating_sub(1).max(1) as f32)
+                    .round() as u16;
+                for row in 0..value_area.height {
+                    let top_frac = (row as f32 * 2.0) / (value_area.height.max(1) as f32 * 2.0 - 1.0);
+                    let bottom_frac = ((row as f32 * 2.0) + 1.0)
+                        / (value_area.height.max(1) as f32 * 2.0 - 1.0);
+                    let top_value = (1.0 - top_frac.clamp(0.0, 1.0)) * 100.0;
+                    let bottom_value = (1.0 - bottom_frac.clamp(0.0, 1.0)) * 100.0;
+                    let top_color = hsv_field_cell(hsv.hue, hsv.saturation, top_value);
+                    let bottom_color = hsv_field_cell(hsv.hue, hsv.saturation, bottom_value);
+                    let selected = row == selected_row;
+                    let indicator_color = bottom_color;
+                    let indicator_fg = contrast_text(indicator_color);
+                    let content = if selected {
+                        "█".repeat(value_area.width as usize)
+                    } else {
+                        "▀".repeat(value_area.width as usize)
+                    };
+                    let style = if selected {
+                        Style::new()
+                            .fg(tui_rgb(indicator_fg))
+                            .bg(tui_rgb(indicator_color))
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::new().fg(tui_rgb(top_color)).bg(tui_rgb(bottom_color))
+                    };
+                    frame.render_widget(
+                        Paragraph::new(Line::from(vec![Span::styled(content, style)])),
+                        Rect {
+                            x: value_area.x,
+                            y: value_area.y + row,
+                            width: value_area.width,
+                            height: 1,
+                        },
+                    );
+                }
+            }
+        }
+
+        let preview_lines = {
+            let current_fg = tui_rgb(contrast_text(current_rgb));
+            let before_line = if let Some(orig) = original_rgb {
+                Line::from(vec![
+                    Span::styled("      ", Style::new().bg(tui_rgb(orig))),
+                    Span::styled("  →  ", Style::new().fg(OB_DIM).bg(OB_BG)),
+                    Span::styled("      ", Style::new().bg(tui_rgb(current_rgb))),
+                ])
+            } else {
+                Line::from(vec![Span::styled("      ", Style::new().bg(tui_rgb(current_rgb)))])
+            };
+            vec![
+                Line::from(Span::styled(
+                    format!(" {}", current_hex),
+                    Style::new().fg(OB_TEXT).add_modifier(Modifier::BOLD),
+                )),
+                before_line,
+                Line::from(Span::styled(
+                    format!(" rgb {} {} {}", current_rgb.r, current_rgb.g, current_rgb.b),
+                    Style::new().fg(OB_MUTED),
+                )),
+                Line::from(Span::styled(
+                    format!(" hsl {:.0} {:.0}% {:.0}%", hsl.hue, hsl.saturation, hsl.lightness),
+                    Style::new().fg(OB_MUTED),
+                )),
+                Line::from(Span::styled(
+                    format!(" hsv {:.0} {:.0}% {:.0}%", hsv.hue, hsv.saturation, hsv.value),
+                    Style::new().fg(current_fg),
+                )),
+                Line::from(Span::styled(
+                    format!(" focus {}", self.color_editor.focus_label()),
+                    Style::new().fg(ACCENT_FG),
+                )),
+            ]
+        };
+        frame.render_widget(
+            Paragraph::new(preview_lines).style(Style::new().bg(OB_BG)),
+            preview_area,
+        );
+
+        let mut field_block = |rect: Rect, title: &str, focused: bool| {
+            let border = if focused { ACCENT_BG } else { OB_BORDER };
+            frame.render_widget(
+                Block::bordered()
+                    .title(format!(" {} ", title))
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::new().fg(border))
+                    .style(Style::new().bg(OB_BG)),
+                rect,
+            );
+        };
+        field_block(
+            rects.hex_field,
+            "HEX",
+            self.color_editor.focus == ColorPickerFocus::HexField,
+        );
+        for (idx, rect) in rects.rgb_fields.iter().enumerate() {
+            field_block(
+                *rect,
+                ["R", "G", "B"][idx],
+                self.color_editor.focus == ColorPickerFocus::RgbField(idx),
+            );
+        }
+        for (idx, rect) in rects.hsl_fields.iter().enumerate() {
+            field_block(
+                *rect,
+                ["H", "S", "L"][idx],
+                self.color_editor.focus == ColorPickerFocus::HslFieldValue(idx),
+            );
+        }
+        let render_field_value = |frame: &mut Frame, rect: Rect, value: String, suffix: &str, editing: bool| {
+            let inner = Rect {
+                x: rect.x + 1,
+                y: rect.y + 1,
+                width: rect.width.saturating_sub(2),
+                height: rect.height.saturating_sub(2),
+            };
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled(
+                        value,
+                        Style::new().fg(if editing { ACCENT_FG } else { OB_TEXT }).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(suffix.to_string(), Style::new().fg(OB_MUTED)),
+                ]))
                 .style(Style::new().bg(OB_BG)),
-            overlay_area,
+                inner,
+            );
+        };
+        render_field_value(
+            frame,
+            rects.hex_field,
+            self.color_editor.field_value(EditableField::Hex),
+            "",
+            matches!(
+                self.color_editor.text_edit.as_ref().map(|edit| edit.target),
+                Some(EditableField::Hex)
+            ),
+        );
+        for idx in 0..3 {
+            render_field_value(
+                frame,
+                rects.rgb_fields[idx],
+                self.color_editor.field_value(EditableField::Rgb(idx)),
+                "",
+                matches!(
+                    self.color_editor.text_edit.as_ref().map(|edit| edit.target),
+                    Some(EditableField::Rgb(i)) if i == idx
+                ),
+            );
+        }
+        for idx in 0..3 {
+            render_field_value(
+                frame,
+                rects.hsl_fields[idx],
+                self.color_editor.field_value(EditableField::Hsl(idx)),
+                if idx == 0 { "°" } else { "%" },
+                matches!(
+                    self.color_editor.text_edit.as_ref().map(|edit| edit.target),
+                    Some(EditableField::Hsl(i)) if i == idx
+                ),
+            );
+        }
+
+        let footer_lines = vec![
+            Line::from(vec![
+                Span::styled(" Tab ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+                Span::styled(" focus  ", Style::new().fg(OB_MUTED)),
+                Span::styled(" M ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+                Span::styled(" switch  ", Style::new().fg(OB_MUTED)),
+                Span::styled(" F ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+                Span::styled(" fg/bg  ", Style::new().fg(OB_MUTED)),
+                Span::styled(" Enter ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+                Span::styled(" edit/keep", Style::new().fg(OB_MUTED)),
+            ]),
+            Line::from(vec![
+                Span::styled(" Mouse ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+                Span::styled(" drag  ", Style::new().fg(OB_MUTED)),
+                Span::styled(" # ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+                Span::styled(" hex  ", Style::new().fg(OB_MUTED)),
+                Span::styled(" Esc ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+                Span::styled(" cancel", Style::new().fg(OB_MUTED)),
+            ]),
+        ];
+        frame.render_widget(
+            Paragraph::new(footer_lines).style(Style::new().bg(OB_BG)),
+            footer,
         );
     }
 
@@ -964,18 +1216,20 @@ impl App {
             ("s",               "Save theme as… (prompts for name)"),
             ("l",               "Open theme loader"),
             ("a",               "Apply current theme to Zellij config"),
+            ("U",               "Install latest released binary (when available)"),
             ("?",               "Toggle this help screen"),
             ("q / Esc",         "Quit"),
             ("",                ""),
             // Color picker
-            ("↑ ↓",            "[Color picker] Select R / G / B channel"),
-            ("← → (×5)",       "[Color picker] Adjust value"),
-            ("Shift + ← →",    "[Color picker] Adjust value by 1"),
-            ("PgUp / PgDn",    "[Color picker] Adjust value by 25"),
-            ("#",               "[Color picker] Enter hex code"),
-            ("Tab",             "[Color picker] Toggle FG / BG (non-pane)"),
-            ("Enter",           "[Color picker] Confirm color"),
-            ("Esc",             "[Color picker] Cancel"),
+            ("Tab / Shift+Tab", "[Color picker] Move focus between controls"),
+            ("m",                "[Color picker] Switch RGB sliders / HSL field"),
+            ("f",                "[Color picker] Toggle FG / BG (non-pane)"),
+            ("Mouse drag",       "[Color picker] Drag in HSL field or lightness slider"),
+            ("← → ↑ ↓",         "[Color picker] Nudge focused control"),
+            ("Shift / Alt",      "[Color picker] Coarse / fine nudging"),
+            ("Enter",            "[Color picker] Edit focused field or confirm"),
+            ("#",                "[Color picker] Jump to hex field editing"),
+            ("Esc",              "[Color picker] Cancel"),
             ("",                ""),
             // Theme loader
             ("type",            "[Load] Search — type to filter, Enter/↓ to navigate results"),

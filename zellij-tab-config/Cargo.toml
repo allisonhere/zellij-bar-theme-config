@@ -1,6 +1,6 @@
 [package]
 name = "zellij_tab_config"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2021"
 
 [dependencies]
@@ -12,6 +12,7 @@ serde_json = "1"
 dirs = "5"
 thiserror = "2"
 ureq = { version = "2", features = ["json"] }
+palette = { version = "0.7", default-features = false, features = ["std"] }
 
 [[bin]]
 name = "zellij-tab-config"

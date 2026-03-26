@@ -1,4 +1,6 @@
 use crate::theme::{RgbColor, Theme, ThemeComponent, ThemeComponentType};
+use crate::update::UpdateMsg;
+use crate::ui::color_picker::ColorEditor;
 
 #[derive(Debug, Clone)]
 pub enum ThemeEntry {
@@ -50,6 +52,9 @@ pub struct App {
     pub undo_history: std::collections::HashMap<(PreviewElement, PreviewAttribute), crate::theme::RgbColor>,
     // Feature 5: rename/delete
     pub loader_action_index: usize,
+    // Self-update
+    pub update_status: UpdateStatus,
+    pub update_rx: Option<std::sync::mpsc::Receiver<UpdateMsg>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,6 +67,17 @@ pub enum InputMode {
     ThemeLoadRename,
     ThemeLoadDeleteConfirm,
     Help,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UpdateStatus {
+    Idle,
+    Checking,
+    UpToDate,
+    Available(String),
+    Downloading,
+    Done,
+    Failed(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -236,92 +252,6 @@ impl PreviewElement {
     }
 }
 
-pub struct ColorEditor {
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
-    pub editing_channel: usize,
-    pub hex_input: Option<String>,
-}
-
-impl ColorEditor {
-    pub fn from_rgb(r: u8, g: u8, b: u8) -> Self {
-        Self {
-            r,
-            g,
-            b,
-            editing_channel: 0,
-            hex_input: None,
-        }
-    }
-
-    pub fn start_hex_input(&mut self) {
-        self.hex_input = Some(format!("{:02x}{:02x}{:02x}", self.r, self.g, self.b));
-    }
-
-    pub fn push_hex_char(&mut self, c: char) {
-        if let Some(ref mut s) = self.hex_input {
-            if s.len() < 6 && c.is_ascii_hexdigit() {
-                s.push(c.to_ascii_lowercase());
-            }
-        }
-    }
-
-    pub fn pop_hex_char(&mut self) -> bool {
-        if let Some(ref mut s) = self.hex_input {
-            s.pop();
-            return true;
-        }
-        false
-    }
-
-    pub fn commit_hex(&mut self) -> Option<RgbColor> {
-        if let Some(ref s) = self.hex_input {
-            if s.len() == 6 {
-                let result = crate::theme::RgbColor::from_hex(s);
-                self.hex_input = None;
-                if let Some(c) = result {
-                    self.r = c.r;
-                    self.g = c.g;
-                    self.b = c.b;
-                    return Some(c);
-                }
-            }
-        }
-        self.hex_input = None;
-        None
-    }
-
-    pub fn cancel_hex(&mut self) {
-        self.hex_input = None;
-    }
-
-    pub fn to_rgb(&self) -> RgbColor {
-        RgbColor::new(self.r, self.g, self.b)
-    }
-
-    pub fn adjust(&mut self, delta: i32) {
-        match self.editing_channel {
-            0 => self.r = (self.r as i32 + delta).clamp(0, 255) as u8,
-            1 => self.g = (self.g as i32 + delta).clamp(0, 255) as u8,
-            2 => self.b = (self.b as i32 + delta).clamp(0, 255) as u8,
-            _ => {}
-        }
-    }
-
-    pub fn select_next_channel(&mut self) {
-        self.editing_channel = (self.editing_channel + 1) % 3;
-    }
-
-    pub fn select_prev_channel(&mut self) {
-        self.editing_channel = if self.editing_channel == 0 {
-            2
-        } else {
-            self.editing_channel - 1
-        };
-    }
-}
-
 fn theme_swatches(theme: &crate::theme::Theme) -> [crate::theme::RgbColor; 4] {
     [
         theme.get(crate::theme::ThemeComponentType::TextUnselected).background,
@@ -369,6 +299,8 @@ impl Default for App {
             clipboard_color: None,
             undo_history: std::collections::HashMap::new(),
             loader_action_index: 0,
+            update_status: UpdateStatus::Idle,
+            update_rx: None,
         }
     }
 }
@@ -640,7 +572,11 @@ impl App {
         let comp_type = self.selected_element.component_type();
         self.original_component = Some(self.theme.get(comp_type).clone());
         let color = self.get_color();
+        let previous_mode = self.color_editor.mode;
         self.color_editor = ColorEditor::from_rgb(color.r, color.g, color.b);
+        if self.color_editor.mode != previous_mode {
+            self.color_editor.toggle_mode();
+        }
         self.input_mode = InputMode::ColorPicker;
     }
 
@@ -662,7 +598,11 @@ impl App {
         self.selected_attribute.cycle();
         let attr = self.selected_attribute;
         let color = self.get_color_by_attr(attr);
+        let previous_mode = self.color_editor.mode;
         self.color_editor = ColorEditor::from_rgb(color.r, color.g, color.b);
+        if self.color_editor.mode != previous_mode {
+            self.color_editor.toggle_mode();
+        }
     }
 
     // Feature 2: move selection to index and live-preview
@@ -760,6 +700,42 @@ impl App {
         self.refresh_theme_list();
         self.selected_theme_index = self.selected_theme_index.min(self.loadable_themes.len().saturating_sub(1));
         self.input_mode = InputMode::ThemeLoad;
+    }
+
+    // Self-update
+    pub fn start_update_check(&mut self) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.update_status = UpdateStatus::Checking;
+        self.update_rx = Some(rx);
+        std::thread::spawn(move || {
+            let _ = tx.send(UpdateMsg::VersionChecked(crate::update::check_version()));
+        });
+    }
+
+    pub fn start_self_update(&mut self) {
+        if let UpdateStatus::Available(tag) = &self.update_status {
+            let tag = tag.clone();
+            let (tx, rx) = std::sync::mpsc::channel();
+            self.update_status = UpdateStatus::Downloading;
+            self.update_rx = Some(rx);
+            std::thread::spawn(move || {
+                let _ = tx.send(UpdateMsg::UpdateComplete(crate::update::download_and_replace(&tag)));
+            });
+        }
+    }
+
+    pub fn poll_update_channel(&mut self) {
+        let msg = self.update_rx.as_ref().and_then(|rx| rx.try_recv().ok());
+        if let Some(msg) = msg {
+            self.update_rx = None;
+            self.update_status = match msg {
+                UpdateMsg::VersionChecked(Ok(Some(tag))) => UpdateStatus::Available(tag),
+                UpdateMsg::VersionChecked(Ok(None))      => UpdateStatus::UpToDate,
+                UpdateMsg::VersionChecked(Err(e))        => UpdateStatus::Failed(e),
+                UpdateMsg::UpdateComplete(Ok(()))        => UpdateStatus::Done,
+                UpdateMsg::UpdateComplete(Err(e))        => UpdateStatus::Failed(e),
+            };
+        }
     }
 }
 

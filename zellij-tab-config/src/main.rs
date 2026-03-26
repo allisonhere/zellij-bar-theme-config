@@ -2,6 +2,7 @@ mod bundled_themes;
 mod config;
 mod theme;
 mod ui;
+mod update;
 
 use ui::App;
 

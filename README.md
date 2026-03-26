@@ -7,12 +7,13 @@ A terminal UI for creating, editing, and applying [Zellij](https://zellij.dev) t
 - **Live preview** — see every color change reflected instantly across a full Zellij-layout mockup
 - **41 built-in themes** — all official Zellij themes bundled, no extra files needed
 - **Per-component theming** — control foreground and background for each UI element independently
-- **RGB color picker** — slider-based editor with hex input (`#rrggbb`)
+- **Dual-mode color picker** — RGB sliders plus an HSL field picker with live HEX/RGB/HSL values
 - **Yank / paste / undo** — copy a color, paste it elsewhere, or undo the last change (`y` / `p` / `u`)
 - **Theme loader** — fuzzy search, filter by built-in or saved, live preview on scroll
 - **Rename / delete** — manage saved themes directly from the loader (`r` / `x`)
 - **Save themes** — writes to `~/.config/zellij/themes/` in the correct KDL format
 - **Apply to Zellij** — sets `theme "<name>"` in `~/.config/zellij/config.kdl` so Zellij picks it up on next launch
+- **In-app self-update** — checks GitHub releases on startup and can replace the binary in place (`U` when an update is available)
 - **Help overlay** — press `?` for a full keybinding reference
 
 ## Installation
@@ -67,6 +68,7 @@ The app opens a full-terminal preview of a Zellij layout. Use the keyboard to na
 | `s` | Save theme as… (prompts for a name) |
 | `l` | Open theme loader |
 | `a` | Apply current theme to Zellij |
+| `U` | Install the latest released binary when an update is available |
 | `?` | Toggle help overlay |
 | `q` / `Esc` | Quit |
 
@@ -74,14 +76,15 @@ The app opens a full-terminal preview of a Zellij layout. Use the keyboard to na
 
 | Key | Action |
 |-----|--------|
-| `↑ ↓` | Select R / G / B channel |
-| `← →` | Adjust value by 5 |
-| `Shift + ← →` | Adjust value by 1 |
-| `PgUp / PgDn` | Adjust value by 25 |
-| `#` | Enter hex code directly |
-| `Tab` | Toggle FG / BG (non-pane elements only) |
-| `Enter` | Confirm |
+| `Tab` / `Shift + Tab` | Move focus between picker controls |
+| `m` | Switch RGB sliders / HSL field |
+| `f` | Toggle FG / BG (non-pane elements only) |
+| `↑ ↓ ← →` | Nudge the focused control |
+| `Shift` / `Alt` with arrows | Coarse / fine nudging |
+| `#` | Jump straight to hex editing |
+| `Enter` | Edit the focused value field or confirm |
 | `Esc` | Cancel |
+| `mouse drag` | Drag in the HSL field or lightness slider |
 
 **Theme loader:**
 
