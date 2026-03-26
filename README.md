@@ -13,7 +13,7 @@ A terminal UI for creating, editing, and applying [Zellij](https://zellij.dev) t
 - **Rename / delete** — manage saved themes directly from the loader (`r` / `x`)
 - **Save themes** — writes to `~/.config/zellij/themes/` in the correct KDL format
 - **Apply to Zellij** — sets `theme "<name>"` in `~/.config/zellij/config.kdl` so Zellij picks it up on next launch
-- **In-app self-update** — checks GitHub releases on startup and can replace the binary in place (`U` when an update is available)
+- **In-app self-update** — checks GitHub releases on startup and can replace the binary in place on Linux x86_64 (`U` when an update is available)
 - **Help overlay** — press `?` for a full keybinding reference
 
 ## Installation
@@ -68,7 +68,7 @@ The app opens a full-terminal preview of a Zellij layout. Use the keyboard to na
 | `s` | Save theme as… (prompts for a name) |
 | `l` | Open theme loader |
 | `a` | Apply current theme to Zellij |
-| `U` | Install the latest released binary when an update is available |
+| `U` | Install the latest released binary when an update is available on Linux x86_64 |
 | `?` | Toggle help overlay |
 | `q` / `Esc` | Quit |
 
