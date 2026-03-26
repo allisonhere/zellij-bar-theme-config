@@ -40,6 +40,10 @@ pub fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
     Rect::new(x, y, popup_width, popup_height)
 }
 
+fn clip_text(text: &str, max_chars: usize) -> String {
+    text.chars().take(max_chars).collect()
+}
+
 pub fn render_slider_lines(
     label: &str,
     value: u8,
@@ -677,6 +681,21 @@ impl App {
                     .bg(bar_bg)
                     .add_modifier(Modifier::BOLD),
             ));
+        } else {
+            use crate::ui::state::UpdateStatus;
+            let (update_text, update_color, bold) = match &self.update_status {
+                UpdateStatus::Checking    => (Some(" checking for update… ".to_string()),  Color::DarkGray, false),
+                UpdateStatus::Available(v) => (Some(format!(" ↑ {} available — press U ", v)), Color::Yellow,   true),
+                UpdateStatus::Downloading => (Some(" downloading update… ".to_string()),   Color::Yellow,   false),
+                UpdateStatus::Done        => (Some(" ✓ updated — restart to apply ".to_string()), Color::Green, true),
+                UpdateStatus::Failed(e)   => (Some(format!(" update check failed: {} ", e)), Color::Red,    false),
+                _                         => (None, Color::Reset, false),
+            };
+            if let Some(text) = update_text {
+                let mut style = Style::new().fg(update_color).bg(bar_bg);
+                if bold { style = style.add_modifier(Modifier::BOLD); }
+                spans.push(Span::styled(text, style));
+            }
         }
 
         spans.push(Span::styled(
@@ -717,21 +736,21 @@ impl App {
 
     fn render_color_picker_overlay(&self, frame: &mut Frame) {
         let area = frame.area();
-        let overlay_w = 52u16.min(area.width.saturating_sub(4));
-        let overlay_h = 17u16.min(area.height.saturating_sub(4));
-        let overlay_x = area.width.saturating_sub(overlay_w + 2);
-        let overlay_y = (area.height.saturating_sub(overlay_h)) / 2;
-        let overlay_area = Rect::new(overlay_x, overlay_y, overlay_w, overlay_h);
+        let overlay_w = 58u16.min(area.width.saturating_sub(4));
+        let overlay_h = 18u16.min(area.height.saturating_sub(4));
+        let overlay_area = centered_rect(area, overlay_w, overlay_h);
 
         frame.render_widget(Clear, overlay_area);
 
-        const OB_BG:     Color = Color::Rgb(22, 22, 26);
+        const OB_BG: Color = Color::Rgb(22, 22, 26);
         const OB_BORDER: Color = Color::Rgb(90, 85, 115);
-        let t = &self.theme;
-        let key_bg = get_bg(ThemeComponentType::RibbonSelected, t);
-        let key_fg = get_fg(ThemeComponentType::RibbonSelected, t);
-        let lbl_bg = get_bg(ThemeComponentType::RibbonUnselected, t);
-        let lbl_fg = get_fg(ThemeComponentType::RibbonUnselected, t);
+        const OB_TEXT: Color = Color::Rgb(212, 212, 230);
+        const OB_MUTED: Color = Color::Rgb(120, 120, 145);
+        const OB_DIM: Color = Color::Rgb(84, 84, 104);
+        const ACCENT_BG: Color = Color::Rgb(97, 88, 150);
+        const ACCENT_FG: Color = Color::Rgb(242, 240, 255);
+        const SUBTLE_BG: Color = Color::Rgb(54, 50, 74);
+        const SUBTLE_FG: Color = Color::Rgb(214, 210, 235);
 
         let r = self.color_editor.r;
         let g = self.color_editor.g;
@@ -756,17 +775,23 @@ impl App {
 
         let mut lines: Vec<Line> = Vec::new();
 
-        // ── Header row: title left, attribute pill right (mirrors loader layout) ──
-        let title_str = format!(" {} — {}", element_name, attr_name);
-        let title_span = Span::styled(title_str.clone(), Style::new().fg(Color::Rgb(200, 200, 240)).add_modifier(Modifier::BOLD));
+        let title_str = String::from(" Color Picker ");
+        let title_span =
+            Span::styled(title_str.clone(), Style::new().fg(OB_TEXT).add_modifier(Modifier::BOLD));
         let attr_pill: Vec<Span> = vec![
-            Span::styled("", Style::new().fg(key_bg).bg(OB_BG)),
-            Span::styled(format!(" {} ", attr_name), Style::new().fg(key_fg).bg(key_bg).add_modifier(Modifier::BOLD)),
-            Span::styled("", Style::new().fg(lbl_bg).bg(key_bg)),
-            Span::styled(format!(" {} ", element_name), Style::new().fg(lbl_fg).bg(lbl_bg)),
-            Span::styled("", Style::new().fg(lbl_bg).bg(OB_BG)),
+            Span::styled("", Style::new().fg(ACCENT_BG).bg(OB_BG)),
+            Span::styled(
+                format!(" {} ", attr_name),
+                Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("", Style::new().fg(SUBTLE_BG).bg(ACCENT_BG)),
+            Span::styled(
+                format!(" {} ", element_name),
+                Style::new().fg(SUBTLE_FG).bg(SUBTLE_BG),
+            ),
+            Span::styled("", Style::new().fg(SUBTLE_BG).bg(OB_BG)),
         ];
-        let title_w = title_str.len();
+        let title_w = title_span.width();
         let pill_w: usize = attr_pill.iter().map(|s| s.width()).sum();
         let inner_w = overlay_w.saturating_sub(2) as usize;
         let gap = inner_w.saturating_sub(title_w + pill_w);
@@ -780,12 +805,12 @@ impl App {
             lines.push(Line::from(vec![
                 Span::raw(" "),
                 Span::styled("        ", Style::new().bg(before_color)),
-                Span::styled("  →  ", Style::new().fg(Color::DarkGray)),
+                Span::styled("  →  ", Style::new().fg(OB_DIM)),
                 Span::styled("        ", Style::new().bg(cur_color)),
                 Span::raw("  "),
                 Span::styled(
                     format!("{} → {}", before_hex, cur_hex),
-                    Style::new().fg(Color::White),
+                    Style::new().fg(OB_TEXT),
                 ),
             ]));
         } else {
@@ -795,7 +820,7 @@ impl App {
                 Span::raw("  "),
                 Span::styled(
                     format!("{} — {}", attr_name, cur_hex),
-                    Style::new().fg(Color::White).add_modifier(Modifier::BOLD),
+                    Style::new().fg(OB_TEXT).add_modifier(Modifier::BOLD),
                 ),
             ]));
         }
@@ -817,32 +842,37 @@ impl App {
         // RGB decimal
         lines.push(Line::from(vec![Span::styled(
             format!("  rgb({} {} {})", r, g, b),
-            Style::new().fg(Color::DarkGray),
+            Style::new().fg(OB_MUTED),
         )]));
         lines.push(Line::from(""));
 
-        // Hex input area
         if let Some(ref hex_str) = self.color_editor.hex_input {
             let display = format!("  #{:<6}█", hex_str);
             lines.push(Line::from(vec![
-                Span::styled(display, Style::new().fg(Color::Rgb(167, 139, 250)).add_modifier(Modifier::BOLD)),
-                Span::styled("  type hex, Enter to apply, Esc to cancel", Style::new().fg(Color::DarkGray)),
+                Span::styled(
+                    display,
+                    Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("  type hex, Enter to apply, Esc to cancel", Style::new().fg(OB_MUTED)),
             ]));
         } else {
             lines.push(Line::from(vec![Span::styled(
                 "  press # to enter hex code",
-                Style::new().fg(Color::DarkGray),
+                Style::new().fg(OB_DIM),
             )]));
         }
         lines.push(Line::from(""));
 
         let mk_pill = |key: &str, action: &str| -> Vec<Span<'static>> {
             vec![
-                Span::styled("", Style::new().fg(key_bg).bg(OB_BG)),
-                Span::styled(format!(" {} ", key),    Style::new().fg(key_fg).bg(key_bg).add_modifier(Modifier::BOLD)),
-                Span::styled("", Style::new().fg(lbl_bg).bg(key_bg)),
-                Span::styled(format!(" {} ", action), Style::new().fg(lbl_fg).bg(lbl_bg)),
-                Span::styled("", Style::new().fg(lbl_bg).bg(OB_BG)),
+                Span::styled("", Style::new().fg(ACCENT_BG).bg(OB_BG)),
+                Span::styled(
+                    format!(" {} ", key),
+                    Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("", Style::new().fg(SUBTLE_BG).bg(ACCENT_BG)),
+                Span::styled(format!(" {} ", action), Style::new().fg(SUBTLE_FG).bg(SUBTLE_BG)),
+                Span::styled("", Style::new().fg(SUBTLE_BG).bg(OB_BG)),
                 Span::raw(" "),
             ]
         };
@@ -997,71 +1027,44 @@ impl App {
     }
 
     fn render_theme_load_overlay(&self, frame: &mut Frame) {
-        let overlay_h = 23u16.min(frame.area().height.saturating_sub(2));
-        let overlay_w = 56u16.min(frame.area().width.saturating_sub(4));
+        let overlay_h = 22u16.min(frame.area().height.saturating_sub(2));
+        let overlay_w = 80u16.min(frame.area().width.saturating_sub(4));
         let area = centered_rect(frame.area(), overlay_w, overlay_h);
         frame.render_widget(Clear, area);
 
         const PANEL_BG: Color = Color::Rgb(22, 22, 26);
+        const PANEL_BORDER: Color = Color::Rgb(90, 85, 115);
+        const PANEL_MUTED: Color = Color::Rgb(120, 120, 145);
+        const PANEL_TEXT: Color = Color::Rgb(212, 212, 230);
+        const PANEL_DIM: Color = Color::Rgb(84, 84, 104);
+        const ACCENT_BG: Color = Color::Rgb(97, 88, 150);
+        const ACCENT_FG: Color = Color::Rgb(242, 240, 255);
+        const SUBTLE_BG: Color = Color::Rgb(54, 50, 74);
+        const SUBTLE_FG: Color = Color::Rgb(214, 210, 235);
 
-        // Outer panel (no title in border — title lives in first inner row)
         let outer_block = Block::bordered()
             .border_type(BorderType::Rounded)
-            .border_style(Style::new().fg(Color::Rgb(90, 85, 115)))
+            .border_style(Style::new().fg(PANEL_BORDER))
             .style(Style::new().bg(PANEL_BG));
         let inner = outer_block.inner(area);
         frame.render_widget(outer_block, area);
 
-        // ── Header row: "Default Themes" left, D/S pills right ──────────────
-        let panel_title = match self.theme_filter {
-            ThemeFilter::Builtin => " Default Themes",
-            ThemeFilter::Saved   => " Saved Themes",
-            ThemeFilter::All     => " All Themes",
-        };
-        let title_spans: Vec<Span> = vec![
+        use crate::ui::state::ThemeFilter;
+
+        let title_spans = vec![
             Span::styled(
-                panel_title,
-                Style::new().fg(Color::Rgb(200, 200, 240)).add_modifier(Modifier::BOLD),
+                " Themes ",
+                Style::new().fg(PANEL_TEXT).add_modifier(Modifier::BOLD),
             ),
         ];
-        use crate::ui::state::ThemeFilter;
-        let t = &self.theme;
-        let sel_bg   = get_bg(ThemeComponentType::RibbonSelected, t);
-        let sel_fg   = get_fg(ThemeComponentType::RibbonSelected, t);
-        let unsel_bg = get_bg(ThemeComponentType::RibbonUnselected, t);
-        let unsel_fg = get_fg(ThemeComponentType::RibbonUnselected, t);
-        let d_active = matches!(self.theme_filter, ThemeFilter::Builtin);
-        let s_active = matches!(self.theme_filter, ThemeFilter::Saved);
-        let (d_key_bg, d_key_fg, d_lbl_bg, d_lbl_fg) = if d_active {
-            (sel_bg, sel_fg, unsel_bg, unsel_fg)
-        } else {
-            (unsel_bg, unsel_fg, PANEL_BG, unsel_fg)
-        };
-        let (s_key_bg, s_key_fg, s_lbl_bg, s_lbl_fg) = if s_active {
-            (sel_bg, sel_fg, unsel_bg, unsel_fg)
-        } else {
-            (unsel_bg, unsel_fg, PANEL_BG, unsel_fg)
-        };
-        let pill_spans: Vec<Span> = vec![
-            Span::styled("", Style::new().fg(d_key_bg).bg(PANEL_BG)),
-            Span::styled(" D ", Style::new().fg(d_key_fg).bg(d_key_bg).add_modifier(Modifier::BOLD)),
-            Span::styled("", Style::new().fg(d_lbl_bg).bg(d_key_bg)),
-            Span::styled(" default ", Style::new().fg(d_lbl_fg).bg(d_lbl_bg)),
-            Span::styled("", Style::new().fg(d_lbl_bg).bg(PANEL_BG)),
-            Span::raw("  "),
-            Span::styled("", Style::new().fg(s_key_bg).bg(PANEL_BG)),
-            Span::styled(" S ", Style::new().fg(s_key_fg).bg(s_key_bg).add_modifier(Modifier::BOLD)),
-            Span::styled("", Style::new().fg(s_lbl_bg).bg(s_key_bg)),
-            Span::styled(" saved ", Style::new().fg(s_lbl_fg).bg(s_lbl_bg)),
-            Span::styled("", Style::new().fg(s_lbl_bg).bg(PANEL_BG)),
-            Span::raw(" "),
-        ];
+        let count_label = format!("{:>2} matches", self.loadable_themes.len());
+        let count_spans = vec![Span::styled(count_label, Style::new().fg(PANEL_MUTED))];
         let title_w: usize = title_spans.iter().map(|s| s.width()).sum();
-        let pills_w: usize = pill_spans.iter().map(|s| s.width()).sum();
-        let gap = (inner.width as usize).saturating_sub(title_w + pills_w);
+        let count_w: usize = count_spans.iter().map(|s| s.width()).sum();
+        let gap = (inner.width as usize).saturating_sub(title_w + count_w);
         let mut header_spans = title_spans;
         header_spans.push(Span::styled(" ".repeat(gap), Style::new().bg(PANEL_BG)));
-        header_spans.extend(pill_spans);
+        header_spans.extend(count_spans);
 
         let header_rect = Rect { x: inner.x, y: inner.y, width: inner.width, height: 1 };
         frame.render_widget(
@@ -1069,35 +1072,96 @@ impl App {
             header_rect,
         );
 
-        // ── Search row ───────────────────────────────────────────────────────
         let display_query = self.theme_search_query.trim_start_matches('/');
-        let search_text = if display_query.is_empty() {
-            String::from("  search: (type to filter)")
+        let search_value = if display_query.is_empty() {
+            String::from("(type to filter)")
         } else if self.search_focused {
-            format!("  search: {}_", display_query)
+            format!("{}_", display_query)
         } else {
-            format!("  search: {}  (Enter/↑↓ to navigate)", display_query)
+            display_query.to_string()
         };
-        let search_fg = if self.theme_search_query.is_empty() {
-            Color::Rgb(80, 80, 100)
+        let search_fg = if display_query.is_empty() {
+            PANEL_DIM
         } else {
-            Color::Rgb(200, 200, 240)
+            PANEL_TEXT
         };
+        let search_spans = vec![
+            Span::styled(" Search ", Style::new().fg(PANEL_MUTED)),
+            Span::styled(format!("/ {}", search_value), Style::new().fg(search_fg)),
+        ];
         let search_rect = Rect { x: inner.x, y: inner.y + 1, width: inner.width, height: 1 };
         frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(search_text, Style::new().fg(search_fg).bg(PANEL_BG)))),
+            Paragraph::new(Line::from(search_spans)).style(Style::new().bg(PANEL_BG)),
             search_rect,
         );
 
-        // ── Cards ────────────────────────────────────────────────────────────
-        // Each card slot = 4 lines (card border + 2 inner + card border)
-        // plus 1 blank gap row = 5 total per slot
-        const CARD_SLOT: u16 = 5;
-        let cards_y = inner.y + 3; // 1 header + 1 search + 1 blank gap
-        let cards_h = inner.height.saturating_sub(3);
-        let cards_per_view = (cards_h / CARD_SLOT) as usize;
-
         let active_name = self.original_theme.as_ref().map(|t| t.name.clone());
+        let selected_entry = self.loadable_themes.get(self.selected_theme_index);
+
+        let filter_pill = |key: &str, label: &str, active: bool| -> Vec<Span<'static>> {
+            let (key_bg, key_fg, lbl_bg, lbl_fg) = if active {
+                (ACCENT_BG, ACCENT_FG, SUBTLE_BG, SUBTLE_FG)
+            } else {
+                (SUBTLE_BG, SUBTLE_FG, PANEL_BG, PANEL_MUTED)
+            };
+            vec![
+                Span::styled("", Style::new().fg(key_bg).bg(PANEL_BG)),
+                Span::styled(
+                    format!(" {} ", key),
+                    Style::new().fg(key_fg).bg(key_bg).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("", Style::new().fg(lbl_bg).bg(key_bg)),
+                Span::styled(
+                    format!(" {} ", label),
+                    Style::new().fg(lbl_fg).bg(lbl_bg),
+                ),
+                Span::styled("", Style::new().fg(lbl_bg).bg(PANEL_BG)),
+                Span::raw(" "),
+            ]
+        };
+
+        let mut filter_spans = filter_pill("A", "all", matches!(self.theme_filter, ThemeFilter::All));
+        filter_spans.extend(filter_pill("D", "built-in", matches!(self.theme_filter, ThemeFilter::Builtin)));
+        filter_spans.extend(filter_pill("S", "saved", matches!(self.theme_filter, ThemeFilter::Saved)));
+        let filter_w: usize = filter_spans.iter().map(|s| s.width()).sum();
+        let live_label = vec![Span::styled(" live preview ", Style::new().fg(PANEL_MUTED))];
+        let live_w: usize = live_label.iter().map(|s| s.width()).sum();
+        let gap = (inner.width as usize).saturating_sub(filter_w + live_w);
+        filter_spans.push(Span::styled(" ".repeat(gap), Style::new().bg(PANEL_BG)));
+        filter_spans.extend(live_label);
+
+        let filter_rect = Rect { x: inner.x, y: inner.y + 2, width: inner.width, height: 1 };
+        frame.render_widget(
+            Paragraph::new(Line::from(filter_spans)).style(Style::new().bg(PANEL_BG)),
+            filter_rect,
+        );
+
+        let body_rect = Rect {
+            x: inner.x,
+            y: inner.y + 3,
+            width: inner.width,
+            height: inner.height.saturating_sub(4),
+        };
+        let [list_rect, detail_rect] =
+            Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)]).areas(body_rect);
+
+        frame.render_widget(
+            Paragraph::new("").block(
+                Block::default()
+                    .borders(ratatui::widgets::Borders::RIGHT)
+                    .border_style(Style::new().fg(Color::Rgb(50, 48, 64))),
+            ),
+            list_rect,
+        );
+
+        let list_inner = Rect {
+            x: list_rect.x,
+            y: list_rect.y,
+            width: list_rect.width.saturating_sub(1),
+            height: list_rect.height,
+        };
+
+        let cards_per_view = list_inner.height.saturating_sub(1) as usize;
 
         let scroll = if self.loadable_themes.len() <= cards_per_view {
             0
@@ -1108,19 +1172,154 @@ impl App {
                 .min(self.loadable_themes.len().saturating_sub(cards_per_view))
         };
 
-        for i in scroll..self.loadable_themes.len() {
-            let card_top = cards_y + ((i - scroll) as u16 * CARD_SLOT);
-            if card_top + 4 > inner.y + inner.height {
-                break;
+        if self.loadable_themes.is_empty() {
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from(Span::styled(" No themes match ", Style::new().fg(PANEL_TEXT).add_modifier(Modifier::BOLD))),
+                    Line::from(""),
+                    Line::from(Span::styled(
+                        format!(" \"/{}\"", display_query),
+                        Style::new().fg(PANEL_MUTED),
+                    )),
+                ])
+                .style(Style::new().bg(PANEL_BG)),
+                list_inner,
+            );
+        } else {
+            for i in scroll..self.loadable_themes.len() {
+                let row_y = list_inner.y + (i - scroll) as u16;
+                if row_y >= list_inner.y + list_inner.height {
+                    break;
+                }
+                let row_rect = Rect {
+                    x: list_inner.x,
+                    y: row_y,
+                    width: list_inner.width,
+                    height: 1,
+                };
+                self.render_theme_card(frame, row_rect, i, i == self.selected_theme_index, &active_name);
             }
-            let card_rect = Rect {
-                x: inner.x,
-                y: card_top,
-                width: inner.width,
-                height: 4,
-            };
-            self.render_theme_card(frame, card_rect, i, i == self.selected_theme_index, &active_name);
         }
+
+        let detail_inner = Rect {
+            x: detail_rect.x + 1,
+            y: detail_rect.y,
+            width: detail_rect.width.saturating_sub(2),
+            height: detail_rect.height,
+        };
+
+        let mut detail_lines: Vec<Line> = Vec::new();
+        if let Some(entry) = selected_entry {
+            let swatches = self
+                .theme_swatches
+                .get(entry.name())
+                .copied()
+                .unwrap_or([crate::theme::RgbColor::new(50, 50, 50); 4]);
+            let is_active = active_name.as_deref() == Some(entry.name());
+            let type_label = if entry.is_builtin() { "built-in theme" } else { "saved theme" };
+            let status = if is_active {
+                " Active in editor"
+            } else {
+                " Previewing selection"
+            };
+            detail_lines.push(Line::from(Span::styled(
+                format!(" {}", entry.name()),
+                Style::new().fg(PANEL_TEXT).add_modifier(Modifier::BOLD),
+            )));
+            detail_lines.push(Line::from(Span::styled(
+                format!(" {}", type_label),
+                Style::new().fg(PANEL_MUTED),
+            )));
+            detail_lines.push(Line::from(""));
+            detail_lines.push(Line::from(Span::styled(
+                " Palette",
+                Style::new().fg(PANEL_MUTED).add_modifier(Modifier::BOLD),
+            )));
+            detail_lines.push(Line::from(vec![
+                Span::raw(" "),
+                Span::styled("● ", Style::new().fg(Color::Rgb(swatches[0].r, swatches[0].g, swatches[0].b))),
+                Span::styled("● ", Style::new().fg(Color::Rgb(swatches[1].r, swatches[1].g, swatches[1].b))),
+                Span::styled("● ", Style::new().fg(Color::Rgb(swatches[2].r, swatches[2].g, swatches[2].b))),
+                Span::styled("●", Style::new().fg(Color::Rgb(swatches[3].r, swatches[3].g, swatches[3].b))),
+            ]));
+            detail_lines.push(Line::from(""));
+            detail_lines.push(Line::from(Span::styled(
+                " Status",
+                Style::new().fg(PANEL_MUTED).add_modifier(Modifier::BOLD),
+            )));
+            detail_lines.push(Line::from(Span::styled(
+                status,
+                Style::new().fg(if is_active { Color::Rgb(110, 220, 110) } else { PANEL_TEXT }),
+            )));
+            detail_lines.push(Line::from(""));
+            detail_lines.push(Line::from(Span::styled(
+                " Actions",
+                Style::new().fg(PANEL_MUTED).add_modifier(Modifier::BOLD),
+            )));
+            detail_lines.push(Line::from(Span::styled(
+                if entry.is_builtin() {
+                    " Enter load   A apply   R rename   X del"
+                } else {
+                    " Enter load   A apply   R rename   X delete"
+                },
+                Style::new().fg(PANEL_TEXT),
+            )));
+            detail_lines.push(Line::from(Span::styled(
+                if entry.is_builtin() {
+                    " Rename and delete are unavailable for built-in themes."
+                } else {
+                    " Saved themes can be renamed or deleted from here."
+                },
+                Style::new().fg(PANEL_MUTED),
+            )));
+            detail_lines.push(Line::from(""));
+            detail_lines.push(Line::from(Span::styled(
+                " Hint",
+                Style::new().fg(PANEL_MUTED).add_modifier(Modifier::BOLD),
+            )));
+            detail_lines.push(Line::from(Span::styled(
+                " Move through the list to preview each theme instantly.",
+                Style::new().fg(PANEL_TEXT),
+            )));
+        } else {
+            detail_lines.push(Line::from(Span::styled(
+                " No theme selected",
+                Style::new().fg(PANEL_TEXT).add_modifier(Modifier::BOLD),
+            )));
+            detail_lines.push(Line::from(""));
+            detail_lines.push(Line::from(Span::styled(
+                " Type to filter or use Esc to clear the search.",
+                Style::new().fg(PANEL_MUTED),
+            )));
+        }
+
+        frame.render_widget(
+            Paragraph::new(detail_lines).style(Style::new().bg(PANEL_BG)),
+            detail_inner,
+        );
+
+        let footer_rect = Rect {
+            x: inner.x,
+            y: inner.y + inner.height.saturating_sub(1),
+            width: inner.width,
+            height: 1,
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(" ↑↓ ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+                Span::styled(" navigate  ", Style::new().fg(PANEL_MUTED)),
+                Span::styled(" type ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+                Span::styled(" filter  ", Style::new().fg(PANEL_MUTED)),
+                Span::styled(" Enter ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+                Span::styled(" load  ", Style::new().fg(PANEL_MUTED)),
+                Span::styled(" A ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+                Span::styled(" apply  ", Style::new().fg(PANEL_MUTED)),
+                Span::styled(" Esc ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+                Span::styled(" close", Style::new().fg(PANEL_MUTED)),
+            ]))
+            .style(Style::new().bg(PANEL_BG)),
+            footer_rect,
+        );
     }
 
     fn render_theme_card(
@@ -1135,60 +1334,63 @@ impl App {
         let swatches = self.theme_swatches.get(entry.name()).copied()
             .unwrap_or([crate::theme::RgbColor::new(50, 50, 50); 4]);
         let is_active = active_name.as_deref() == Some(entry.name());
-
-        let (card_bg, border_col) = if selected {
-            (Color::Rgb(24, 24, 28), Color::Rgb(160, 150, 190))
+        let row_bg = if selected {
+            Color::Rgb(30, 30, 38)
         } else {
-            (Color::Rgb(24, 24, 28), Color::Rgb(45, 42, 60))
+            Color::Rgb(22, 22, 26)
+        };
+        let row_fg = if selected {
+            Color::White
+        } else {
+            Color::Rgb(192, 192, 214)
+        };
+        let type_fg = if selected {
+            Color::Rgb(176, 176, 202)
+        } else {
+            Color::Rgb(108, 108, 132)
         };
 
-        let block = Block::bordered()
-            .border_type(BorderType::Rounded)
-            .border_style(Style::new().fg(border_col))
-            .style(Style::new().bg(card_bg));
-        let card_inner = block.inner(area);
-        frame.render_widget(block, area);
-
-        // ── Line 1: name [●active] ──── swatches ──
-        let name_fg = if selected { Color::White } else { Color::Rgb(190, 190, 215) };
-        let mut line1: Vec<Span> = vec![
-            Span::raw(" "),
-            Span::styled(entry.name(), Style::new().fg(name_fg).bg(card_bg).add_modifier(Modifier::BOLD)),
+        let mut spans = vec![
+            Span::styled(
+                if selected { "> " } else { "  " },
+                Style::new()
+                    .fg(if selected { Color::Rgb(200, 190, 240) } else { Color::Rgb(72, 72, 92) })
+                    .bg(row_bg)
+                    .add_modifier(if selected { Modifier::BOLD } else { Modifier::empty() }),
+            ),
         ];
-        if is_active {
-            line1.push(Span::styled(" ●", Style::new().fg(Color::Rgb(80, 210, 80)).bg(card_bg)));
+
+        let type_label = if entry.is_builtin() { "bundled" } else { "saved" };
+        let swatch_w = swatches.len() * 2;
+        let active_w = if is_active { 2 } else { 0 };
+        let reserved = 2 + swatch_w + active_w + type_label.len();
+        let name_width = (area.width as usize).saturating_sub(reserved + 2).max(8);
+        let clipped_name = clip_text(entry.name(), name_width);
+        spans.push(Span::styled(
+            format!("{:<width$}", clipped_name, width = name_width),
+            Style::new().fg(row_fg).bg(row_bg).add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(" ", Style::new().bg(row_bg)));
+        for sw in swatches {
+            spans.push(Span::styled(
+                "● ",
+                Style::new().fg(Color::Rgb(sw.r, sw.g, sw.b)).bg(row_bg),
+            ));
         }
-        // Build swatch spans and measure them
-        let swatch_spans: Vec<Span> = swatches.iter().map(|sw| {
-            Span::styled("⬤ ", Style::new().fg(Color::Rgb(sw.r, sw.g, sw.b)).bg(card_bg))
-        }).collect();
-        let trailing = Span::styled(" ", Style::new().bg(card_bg));
-        let right_w: usize = swatch_spans.iter().map(|s| s.width()).sum::<usize>() + trailing.width();
-        let name_w: usize = line1.iter().map(|s| s.width()).sum();
-        let pad = (card_inner.width as usize).saturating_sub(name_w + right_w);
-        line1.push(Span::styled(" ".repeat(pad), Style::new().bg(card_bg)));
-        line1.extend(swatch_spans);
-        line1.push(trailing);
+        if is_active {
+            spans.push(Span::styled(
+                "● ",
+                Style::new().fg(Color::Rgb(110, 220, 110)).bg(row_bg),
+            ));
+        }
+        spans.push(Span::styled(
+            type_label,
+            Style::new().fg(type_fg).bg(row_bg),
+        ));
 
-        let line1_rect = Rect { x: card_inner.x, y: card_inner.y, width: card_inner.width, height: 1 };
-        frame.render_widget(Paragraph::new(Line::from(line1)), line1_rect);
-
-        // ── Line 2: subtitle ──── [A] activate ──
-        let subtitle = if entry.is_builtin() { "Built-in theme" } else { "Saved theme" };
-        let btn_spans: Vec<Span> = vec![
-            Span::styled("[", Style::new().fg(Color::Rgb(80, 80, 105)).bg(card_bg)),
-            Span::styled("A", Style::new().fg(Color::Rgb(192, 132, 252)).bg(card_bg).add_modifier(Modifier::BOLD)),
-            Span::styled("] activate ", Style::new().fg(Color::Rgb(150, 150, 180)).bg(card_bg)),
-        ];
-        let btn_w: usize = btn_spans.iter().map(|s| s.width()).sum();
-        let sub_max = (card_inner.width as usize).saturating_sub(btn_w + 1);
-        let sub_text = format!(" {:<width$}", subtitle, width = sub_max.saturating_sub(1));
-        let mut line2: Vec<Span> = vec![
-            Span::styled(sub_text, Style::new().fg(Color::Rgb(100, 100, 140)).bg(card_bg)),
-        ];
-        line2.extend(btn_spans);
-
-        let line2_rect = Rect { x: card_inner.x, y: card_inner.y + 1, width: card_inner.width, height: 1 };
-        frame.render_widget(Paragraph::new(Line::from(line2)), line2_rect);
+        frame.render_widget(
+            Paragraph::new(Line::from(spans)).style(Style::new().bg(row_bg)),
+            area,
+        );
     }
 }
