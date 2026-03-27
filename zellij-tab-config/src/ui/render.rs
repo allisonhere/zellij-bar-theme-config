@@ -185,10 +185,10 @@ impl App {
 
     fn render_zellij_panes(&self, frame: &mut Frame, area: Rect) {
         let t = &self.theme;
-        let bg = get_bg(ThemeComponentType::TextUnselected, t);
         let text_fg = get_fg(ThemeComponentType::TextUnselected, t);
+        let canvas_bg = get_bg(ThemeComponentType::TextUnselected, t);
 
-        frame.render_widget(Paragraph::new("").style(Style::new().bg(bg)), area);
+        frame.render_widget(Paragraph::new("").style(Style::new().bg(canvas_bg)), area);
 
         let [left, right] =
             Layout::horizontal([Constraint::Percentage(60), Constraint::Percentage(40)])
@@ -197,21 +197,22 @@ impl App {
         let [top_left, bottom_left] =
             Layout::vertical([Constraint::Percentage(55), Constraint::Percentage(45)]).areas(left);
 
-        self.render_pane_selected(frame, top_left, bg, text_fg);
-        self.render_pane_unselected(frame, bottom_left, bg, text_fg);
-        self.render_pane_highlight(frame, right, bg, text_fg);
+        self.render_pane_selected(frame, top_left, text_fg);
+        self.render_pane_unselected(frame, bottom_left, text_fg);
+        self.render_pane_highlight(frame, right, text_fg);
     }
 
-    fn render_pane_selected(&self, frame: &mut Frame, area: Rect, bg: Color, text_fg: Color) {
+    fn render_pane_selected(&self, frame: &mut Frame, area: Rect, text_fg: Color) {
         let t = &self.theme;
         let is_editing_border = self.selected_element == PreviewElement::PaneSelected;
         let is_editing_text = self.selected_element == PreviewElement::TextSelected;
+        let base_pane_bg = get_bg(ThemeComponentType::FrameSelected, t);
 
         // Lighten the whole pane bg when this pane frame is focused
         let pane_bg = if is_editing_border {
-            lighten(bg, 25)
+            lighten(base_pane_bg, 25)
         } else {
-            bg
+            base_pane_bg
         };
 
         let border_color = get_fg(ThemeComponentType::FrameSelected, t);
@@ -266,9 +267,10 @@ impl App {
         frame.render_widget(Paragraph::new(content).block(block), area);
     }
 
-    fn render_pane_unselected(&self, frame: &mut Frame, area: Rect, bg: Color, text_fg: Color) {
+    fn render_pane_unselected(&self, frame: &mut Frame, area: Rect, text_fg: Color) {
         let is_editing = self.selected_element == PreviewElement::PaneUnselected;
-        let pane_bg = if is_editing { lighten(bg, 25) } else { bg };
+        let base_pane_bg = get_bg(ThemeComponentType::FrameUnselected, &self.theme);
+        let pane_bg = if is_editing { lighten(base_pane_bg, 25) } else { base_pane_bg };
         let border_color = get_fg(ThemeComponentType::FrameUnselected, &self.theme);
         let border_style = Style::new().fg(border_color).add_modifier(if is_editing {
             Modifier::BOLD
@@ -301,15 +303,16 @@ impl App {
         frame.render_widget(Paragraph::new(content).block(block), area);
     }
 
-    fn render_pane_highlight(&self, frame: &mut Frame, area: Rect, bg: Color, text_fg: Color) {
+    fn render_pane_highlight(&self, frame: &mut Frame, area: Rect, text_fg: Color) {
         let t = &self.theme;
         let is_editing_frame = self.selected_element == PreviewElement::PaneHighlight;
+        let base_pane_bg = get_bg(ThemeComponentType::FrameHighlight, t);
 
         // Lighten whole pane bg when the frame itself is focused
         let pane_bg = if is_editing_frame {
-            lighten(bg, 25)
+            lighten(base_pane_bg, 25)
         } else {
-            bg
+            base_pane_bg
         };
         let border_color = get_fg(ThemeComponentType::FrameHighlight, t);
         let border_style = Style::new()
