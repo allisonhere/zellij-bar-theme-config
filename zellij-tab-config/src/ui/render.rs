@@ -1494,8 +1494,17 @@ impl App {
     }
 
     fn render_theme_load_overlay(&self, frame: &mut Frame) {
-        let overlay_h = 22u16.min(frame.area().height.saturating_sub(2));
-        let overlay_w = 78u16.min(frame.area().width.saturating_sub(4));
+        let overlay_h = 20u16.min(frame.area().height.saturating_sub(2));
+        let longest_name = self
+            .loadable_themes
+            .iter()
+            .map(|entry| entry.name().chars().count())
+            .max()
+            .unwrap_or(24) as u16;
+        let desired_w = longest_name.saturating_add(18);
+        let overlay_w = desired_w
+            .clamp(64, 78)
+            .min(frame.area().width.saturating_sub(4));
         let area = centered_rect(frame.area(), overlay_w, overlay_h);
         frame.render_widget(Clear, area);
 
@@ -1517,49 +1526,40 @@ impl App {
         frame.render_widget(outer_block, area);
 
         use crate::ui::state::ThemeFilter;
+        let display_query = self.theme_search_query.trim_start_matches('/');
 
-        let title_spans = vec![
-            Span::styled(
-                " Themes ",
-                Style::new().fg(PANEL_TEXT).add_modifier(Modifier::BOLD),
-            ),
-        ];
+        let title_spans = vec![Span::styled(
+            " Themes ",
+            Style::new().fg(PANEL_TEXT).add_modifier(Modifier::BOLD),
+        )];
         let count_label = format!("{:>2} matches", self.loadable_themes.len());
         let count_spans = vec![Span::styled(count_label, Style::new().fg(PANEL_MUTED))];
         let title_w: usize = title_spans.iter().map(|s| s.width()).sum();
         let count_w: usize = count_spans.iter().map(|s| s.width()).sum();
-        let gap = (inner.width as usize).saturating_sub(title_w + count_w);
+        let search_label = format!(
+            " / {}",
+            if display_query.is_empty() {
+                "(type to filter)".to_string()
+            } else if self.search_focused {
+                format!("{}_", display_query)
+            } else {
+                display_query.to_string()
+            }
+        );
+        let search_fg = if display_query.is_empty() { PANEL_DIM } else { PANEL_TEXT };
+        let search_spans = vec![Span::styled(search_label, Style::new().fg(search_fg))];
+        let search_w: usize = search_spans.iter().map(|s| s.width()).sum();
+        let gap = (inner.width as usize).saturating_sub(title_w + search_w + count_w);
         let mut header_spans = title_spans;
         header_spans.push(Span::styled(" ".repeat(gap), Style::new().bg(PANEL_BG)));
+        header_spans.extend(search_spans);
+        header_spans.push(Span::styled("  ", Style::new().bg(PANEL_BG)));
         header_spans.extend(count_spans);
 
         let header_rect = Rect { x: inner.x, y: inner.y, width: inner.width, height: 1 };
         frame.render_widget(
             Paragraph::new(Line::from(header_spans)).style(Style::new().bg(PANEL_BG)),
             header_rect,
-        );
-
-        let display_query = self.theme_search_query.trim_start_matches('/');
-        let search_value = if display_query.is_empty() {
-            String::from("(type to filter)")
-        } else if self.search_focused {
-            format!("{}_", display_query)
-        } else {
-            display_query.to_string()
-        };
-        let search_fg = if display_query.is_empty() {
-            PANEL_DIM
-        } else {
-            PANEL_TEXT
-        };
-        let search_spans = vec![
-            Span::styled(" Search ", Style::new().fg(PANEL_MUTED)),
-            Span::styled(format!("/ {}", search_value), Style::new().fg(search_fg)),
-        ];
-        let search_rect = Rect { x: inner.x, y: inner.y + 1, width: inner.width, height: 1 };
-        frame.render_widget(
-            Paragraph::new(Line::from(search_spans)).style(Style::new().bg(PANEL_BG)),
-            search_rect,
         );
 
         let active_name = self.original_theme.as_ref().map(|t| t.name.clone());
@@ -1588,14 +1588,7 @@ impl App {
         let mut filter_spans = filter_pill("A", "all", matches!(self.theme_filter, ThemeFilter::All));
         filter_spans.extend(filter_pill("D", "built-in", matches!(self.theme_filter, ThemeFilter::Builtin)));
         filter_spans.extend(filter_pill("S", "saved", matches!(self.theme_filter, ThemeFilter::Saved)));
-        let filter_w: usize = filter_spans.iter().map(|s| s.width()).sum();
-        let live_label = vec![Span::styled(" live preview ", Style::new().fg(PANEL_MUTED))];
-        let live_w: usize = live_label.iter().map(|s| s.width()).sum();
-        let gap = (inner.width as usize).saturating_sub(filter_w + live_w);
-        filter_spans.push(Span::styled(" ".repeat(gap), Style::new().bg(PANEL_BG)));
-        filter_spans.extend(live_label);
-
-        let filter_rect = Rect { x: inner.x, y: inner.y + 2, width: inner.width, height: 1 };
+        let filter_rect = Rect { x: inner.x, y: inner.y + 1, width: inner.width, height: 1 };
         frame.render_widget(
             Paragraph::new(Line::from(filter_spans)).style(Style::new().bg(PANEL_BG)),
             filter_rect,
@@ -1603,7 +1596,7 @@ impl App {
 
         let body_rect = Rect {
             x: inner.x,
-            y: inner.y + 3,
+            y: inner.y + 2,
             width: inner.width,
             height: inner.height.saturating_sub(4),
         };
@@ -1658,13 +1651,11 @@ impl App {
         frame.render_widget(
             Paragraph::new(Line::from(vec![
                 Span::styled(" ↑↓ ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
-                Span::styled(" navigate  ", Style::new().fg(PANEL_MUTED)),
-                Span::styled(" type ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
-                Span::styled(" filter  ", Style::new().fg(PANEL_MUTED)),
+                Span::styled(" move  ", Style::new().fg(PANEL_MUTED)),
                 Span::styled(" Enter ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
                 Span::styled(" load  ", Style::new().fg(PANEL_MUTED)),
-                Span::styled(" A ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
-                Span::styled(" apply  ", Style::new().fg(PANEL_MUTED)),
+                Span::styled(" type ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+                Span::styled(" filter  ", Style::new().fg(PANEL_MUTED)),
                 Span::styled(" Esc ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
                 Span::styled(" close", Style::new().fg(PANEL_MUTED)),
             ]))
@@ -1711,10 +1702,9 @@ impl App {
             ),
         ];
 
-        let type_label = if entry.is_builtin() { "bundled" } else { "saved" };
-        let swatch_w = swatches.len() * 2;
-        let active_w = if is_active { 2 } else { 0 };
-        let reserved = 2 + swatch_w + active_w + type_label.len();
+        let type_label = if entry.is_builtin() { "B" } else { "S" };
+        let detail_w = if selected { 12 } else { 4 };
+        let reserved = 2 + detail_w;
         let name_width = (area.width as usize).saturating_sub(reserved + 1).max(12);
         let clipped_name = clip_text(entry.name(), name_width);
         spans.push(Span::styled(
@@ -1722,22 +1712,27 @@ impl App {
             Style::new().fg(row_fg).bg(row_bg).add_modifier(Modifier::BOLD),
         ));
         spans.push(Span::styled(" ", Style::new().bg(row_bg)));
-        for sw in swatches {
+        if selected {
+            for sw in swatches.iter().take(3) {
+                spans.push(Span::styled(
+                    "● ",
+                    Style::new().fg(Color::Rgb(sw.r, sw.g, sw.b)).bg(row_bg),
+                ));
+            }
             spans.push(Span::styled(
-                "● ",
-                Style::new().fg(Color::Rgb(sw.r, sw.g, sw.b)).bg(row_bg),
+                type_label,
+                Style::new().fg(type_fg).bg(row_bg).add_modifier(Modifier::BOLD),
             ));
-        }
-        if is_active {
+        } else if is_active {
             spans.push(Span::styled(
                 "● ",
                 Style::new().fg(Color::Rgb(110, 220, 110)).bg(row_bg),
             ));
+            spans.push(Span::styled(type_label, Style::new().fg(type_fg).bg(row_bg)));
+        } else {
+            spans.push(Span::styled("  ", Style::new().bg(row_bg)));
+            spans.push(Span::styled(type_label, Style::new().fg(type_fg).bg(row_bg)));
         }
-        spans.push(Span::styled(
-            type_label,
-            Style::new().fg(type_fg).bg(row_bg),
-        ));
 
         frame.render_widget(
             Paragraph::new(Line::from(spans)).style(Style::new().bg(row_bg)),
