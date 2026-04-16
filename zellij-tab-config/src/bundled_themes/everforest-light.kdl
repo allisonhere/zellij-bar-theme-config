@@ -1,5 +1,5 @@
 themes {
-  everforest-light {
+    everforest-light {
         text_unselected {
             base 92 106 114
             background 242 239 223
@@ -16,14 +16,6 @@ themes {
             emphasis_2 141 161 1
             emphasis_3 223 105 186
         }
-        ribbon_selected {
-            base 242 239 223
-            background 141 161 1
-            emphasis_0 79 88 94
-            emphasis_1 255 158 100
-            emphasis_2 223 105 186
-            emphasis_3 58 148 197
-        }
         ribbon_unselected {
             base 242 239 223
             background 130 145 129
@@ -32,9 +24,25 @@ themes {
             emphasis_2 58 148 197
             emphasis_3 223 105 186
         }
+        ribbon_selected {
+            base 242 239 223
+            background 141 161 1
+            emphasis_0 79 88 94
+            emphasis_1 255 158 100
+            emphasis_2 223 105 186
+            emphasis_3 58 148 197
+        }
         table_title {
             base 141 161 1
-            background 0
+            background 0 0 0
+            emphasis_0 255 158 100
+            emphasis_1 53 167 124
+            emphasis_2 141 161 1
+            emphasis_3 223 105 186
+        }
+        table_cell_unselected {
+            base 92 106 114
+            background 92 106 114
             emphasis_0 255 158 100
             emphasis_1 53 167 124
             emphasis_2 141 161 1
@@ -48,7 +56,7 @@ themes {
             emphasis_2 141 161 1
             emphasis_3 223 105 186
         }
-        table_cell_unselected {
+        list_unselected {
             base 92 106 114
             background 92 106 114
             emphasis_0 255 158 100
@@ -64,9 +72,9 @@ themes {
             emphasis_2 141 161 1
             emphasis_3 223 105 186
         }
-        list_unselected {
-            base 92 106 114
-            background 92 106 114
+        frame_unselected {
+            base 204 205 195
+            background 242 239 223
             emphasis_0 255 158 100
             emphasis_1 53 167 124
             emphasis_2 141 161 1
@@ -74,15 +82,15 @@ themes {
         }
         frame_selected {
             base 141 161 1
-            background 0
+            background 0 0 0
             emphasis_0 255 158 100
             emphasis_1 53 167 124
             emphasis_2 223 105 186
-            emphasis_3 0
+            emphasis_3 0 0 0
         }
         frame_highlight {
             base 255 158 100
-            background 0
+            background 0 0 0
             emphasis_0 223 105 186
             emphasis_1 255 158 100
             emphasis_2 255 158 100
@@ -90,7 +98,7 @@ themes {
         }
         exit_code_success {
             base 141 161 1
-            background 0
+            background 0 0 0
             emphasis_0 53 167 124
             emphasis_1 92 106 114
             emphasis_2 223 105 186
@@ -98,23 +106,11 @@ themes {
         }
         exit_code_error {
             base 248 85 82
-            background 0
+            background 0 0 0
             emphasis_0 223 160 0
-            emphasis_1 0
-            emphasis_2 0
-            emphasis_3 0
-        }
-        multiplayer_user_colors {
-            player_1 223 105 186
-            player_2 58 148 197
-            player_3 0
-            player_4 223 160 0
-            player_5 53 167 124
-            player_6 0
-            player_7 248 85 82
-            player_8 0
-            player_9 0
-            player_10 0
+            emphasis_1 0 0 0
+            emphasis_2 0 0 0
+            emphasis_3 0 0 0
         }
     }
 }

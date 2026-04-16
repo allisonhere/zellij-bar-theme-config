@@ -13,21 +13,218 @@ use ratatui::{
 
 use super::state::normalize_theme_name;
 
-pub fn lighten(color: Color, amount: u8) -> Color {
-    if let Color::Rgb(r, g, b) = color {
-        Color::Rgb(
-            r.saturating_add(amount),
-            g.saturating_add(amount),
-            b.saturating_add(amount),
-        )
-    } else {
-        color
-    }
-}
-
 pub fn get_fg(comp: ThemeComponentType, theme: &crate::theme::Theme) -> Color {
     let c = theme.get(comp);
     Color::Rgb(c.base.r, c.base.g, c.base.b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::parse_theme_kdl;
+    use ratatui::{
+        backend::{CrosstermBackend, TestBackend},
+        buffer::Buffer,
+        Terminal,
+    };
+    use std::{
+        io::{self, Write},
+        sync::{Arc, Mutex},
+    };
+
+    #[derive(Clone, Default)]
+    struct SharedWriter {
+        bytes: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl SharedWriter {
+        fn utf8(&self) -> String {
+            String::from_utf8(self.bytes.lock().unwrap().clone()).expect("valid utf8 escape stream")
+        }
+    }
+
+    impl Write for SharedWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.bytes.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn dracula_app() -> App {
+        let mut app = App::default();
+        app.theme = parse_theme_kdl(include_str!("../bundled_themes/dracula.kdl"), "dracula")
+            .expect("dracula should parse");
+        app.theme_name_input = app.theme.name.clone();
+        app.message = Some(String::from("✓ Loaded: dracula"));
+        app
+    }
+
+    fn find_text(buffer: &Buffer, needle: &str) -> Option<(u16, u16)> {
+        let width = buffer.area.width;
+        let height = buffer.area.height;
+        let chars: Vec<char> = needle.chars().collect();
+        let needle_width = chars.len() as u16;
+
+        for y in 0..height {
+            for x in 0..width.saturating_sub(needle_width).saturating_add(1) {
+                let matched = chars.iter().enumerate().all(|(offset, ch)| {
+                    buffer[(x + offset as u16, y)].symbol().starts_with(*ch)
+                });
+                if matched {
+                    return Some((x, y));
+                }
+            }
+        }
+        None
+    }
+
+    fn rgb(r: u8, g: u8, b: u8) -> Color {
+        Color::Rgb(r, g, b)
+    }
+
+    #[test]
+    fn dracula_preview_buffer_carries_expected_theme_styles() {
+        let app = dracula_app();
+        let text_unsel_fg = get_fg(ThemeComponentType::TextUnselected, &app.theme);
+        let text_unsel_bg = get_bg(ThemeComponentType::TextUnselected, &app.theme);
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).expect("test terminal");
+        let frame = terminal.draw(|f| app.render(f)).expect("draw should succeed");
+        let buffer = &frame.buffer;
+
+        let tab = find_text(buffer, "1:terminal").expect("selected tab should be rendered");
+        assert_eq!(buffer[tab].fg, rgb(0, 0, 0));
+        assert_eq!(buffer[tab].bg, rgb(80, 250, 123));
+
+        let selected_text =
+            find_text(buffer, "projects/").expect("selected text row should be rendered");
+        assert_eq!(buffer[selected_text].fg, text_unsel_fg);
+        assert_eq!(buffer[selected_text].bg, text_unsel_bg);
+
+        let table_title =
+            find_text(buffer, "Changes staged").expect("table title should be rendered");
+        assert_eq!(buffer[table_title].fg, rgb(80, 250, 123));
+        assert_eq!(buffer[table_title].bg, rgb(0, 0, 0));
+
+        let exit_ok = find_text(buffer, "exit 0").expect("success badge should be rendered");
+        assert_eq!(buffer[exit_ok].fg, rgb(80, 250, 123));
+        assert_eq!(buffer[exit_ok].bg, rgb(0, 0, 0));
+
+        let empty_pane_cell = &buffer[(2, 8)];
+        assert_eq!(empty_pane_cell.bg, rgb(0, 0, 0));
+        assert_eq!(empty_pane_cell.fg, Color::Reset);
+    }
+
+    #[test]
+    fn default_preview_right_pane_uses_unselected_frame_color() {
+        let app = dracula_app();
+        let expected = get_fg(ThemeComponentType::FrameUnselected, &app.theme);
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).expect("test terminal");
+        let frame = terminal.draw(|f| app.render(f)).expect("draw should succeed");
+        let buffer = &frame.buffer;
+
+        let right_pane_border = &buffer[(72, 2)];
+        assert_eq!(right_pane_border.fg, expected);
+    }
+
+    #[test]
+    fn default_preview_selected_pane_uses_unselected_frame_color() {
+        let app = dracula_app();
+        let expected = get_fg(ThemeComponentType::FrameSelected, &app.theme);
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).expect("test terminal");
+        let frame = terminal.draw(|f| app.render(f)).expect("draw should succeed");
+        let buffer = &frame.buffer;
+
+        let left_pane_border = &buffer[(0, 1)];
+        assert_eq!(left_pane_border.fg, expected);
+    }
+
+    #[test]
+    fn default_preview_projects_row_uses_unselected_text_colors() {
+        let app = dracula_app();
+        let expected_fg = get_fg(ThemeComponentType::TextUnselected, &app.theme);
+        let expected_bg = get_bg(ThemeComponentType::TextUnselected, &app.theme);
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).expect("test terminal");
+        let frame = terminal.draw(|f| app.render(f)).expect("draw should succeed");
+        let buffer = &frame.buffer;
+
+        let selected_text =
+            find_text(buffer, "projects/").expect("projects row should be rendered");
+        assert_eq!(buffer[selected_text].fg, expected_fg);
+        assert_eq!(buffer[selected_text].bg, expected_bg);
+    }
+
+    #[test]
+    fn pane_highlight_selection_switches_right_pane_to_highlight_frame_color() {
+        let mut app = dracula_app();
+        app.selected_element = PreviewElement::PaneHighlight;
+        let expected = get_fg(ThemeComponentType::FrameHighlight, &app.theme);
+
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).expect("test terminal");
+        let frame = terminal.draw(|f| app.render(f)).expect("draw should succeed");
+        let buffer = &frame.buffer;
+
+        let right_pane_border = &buffer[(72, 2)];
+        assert_eq!(right_pane_border.fg, expected);
+    }
+
+    #[test]
+    fn pane_selected_selection_switches_left_pane_to_selected_frame_color() {
+        let mut app = dracula_app();
+        app.selected_element = PreviewElement::PaneSelected;
+        let expected = get_fg(ThemeComponentType::FrameSelected, &app.theme);
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).expect("test terminal");
+        let frame = terminal.draw(|f| app.render(f)).expect("draw should succeed");
+        let buffer = &frame.buffer;
+
+        let left_pane_border = &buffer[(0, 1)];
+        assert_eq!(left_pane_border.fg, expected);
+    }
+
+    #[test]
+    fn text_selected_selection_switches_projects_row_to_selected_text_colors() {
+        let mut app = dracula_app();
+        app.selected_element = PreviewElement::TextSelected;
+        let expected_fg = get_fg(ThemeComponentType::TextSelected, &app.theme);
+        let expected_bg = get_bg(ThemeComponentType::TextSelected, &app.theme);
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).expect("test terminal");
+        let frame = terminal.draw(|f| app.render(f)).expect("draw should succeed");
+        let buffer = &frame.buffer;
+
+        let selected_text =
+            find_text(buffer, "projects/").expect("projects row should be rendered");
+        assert_eq!(buffer[selected_text].fg, expected_fg);
+        assert_eq!(buffer[selected_text].bg, expected_bg);
+    }
+
+    #[test]
+    fn dracula_preview_crossterm_output_emits_truecolor_sequences() {
+        let app = dracula_app();
+        crossterm::style::force_color_output(true);
+        let writer = SharedWriter::default();
+        let capture = writer.clone();
+        let mut terminal =
+            Terminal::new(CrosstermBackend::new(writer)).expect("crossterm terminal");
+
+        terminal.draw(|f| app.render(f)).expect("draw should succeed");
+
+        let ansi = capture.utf8();
+        for color in [
+            "38;2;80;250;123",
+            "48;2;80;250;123",
+            "48;2;40;42;54",
+            "48;2;0;0;0",
+        ] {
+            assert!(
+                ansi.contains(color),
+                "expected ANSI output to contain {color}, got: {ansi}"
+            );
+        }
+        crossterm::style::force_color_output(false);
+    }
 }
 
 pub fn get_bg(comp: ThemeComponentType, theme: &crate::theme::Theme) -> Color {
@@ -49,6 +246,14 @@ fn clip_text(text: &str, max_chars: usize) -> String {
 
 fn tui_rgb(color: crate::theme::RgbColor) -> Color {
     Color::Rgb(color.r, color.g, color.b)
+}
+
+fn selection_modifier(selected: bool) -> Modifier {
+    if selected {
+        Modifier::UNDERLINED
+    } else {
+        Modifier::empty()
+    }
 }
 
 impl App {
@@ -104,26 +309,6 @@ impl App {
         let is_tab_u1 = self.selected_element == PreviewElement::TabUnselected1;
         let is_tab_u2 = self.selected_element == PreviewElement::TabUnselected2;
 
-        let tab_sel_fg = sel_fg;
-        let tab_u1_fg = unsel_fg;
-        let tab_u2_fg = unsel_fg;
-        // Selection: lighten the tab's background instead of overriding fg with yellow
-        let tab_sel_bg = if is_tab_sel {
-            lighten(sel_bg, 30)
-        } else {
-            sel_bg
-        };
-        let tab_u1_bg = if is_tab_u1 {
-            lighten(unsel_bg, 30)
-        } else {
-            unsel_bg
-        };
-        let tab_u2_bg = if is_tab_u2 {
-            lighten(unsel_bg, 30)
-        } else {
-            unsel_bg
-        };
-
         let layout_label = " layout: default ";
 
         // Session name (plain, no pill shape — matches real Zellij)
@@ -135,39 +320,32 @@ impl App {
                 .add_modifier(Modifier::BOLD),
         )];
 
-        // Selected tab pill — bg lightened if this tab is the focused element
-        spans.push(Span::styled("", Style::new().fg(tab_sel_bg).bg(bar_bg)));
         spans.push(Span::styled(
             " 1:terminal ",
             Style::new()
-                .fg(tab_sel_fg)
-                .bg(tab_sel_bg)
-                .add_modifier(Modifier::BOLD),
+                .fg(sel_fg)
+                .bg(sel_bg)
+                .add_modifier(Modifier::BOLD | selection_modifier(is_tab_sel)),
         ));
-        spans.push(Span::styled("", Style::new().fg(tab_sel_bg).bg(unsel_bg)));
+        spans.push(Span::styled(" ", Style::new().bg(bar_bg)));
 
-        // Unselected tab 2 pill — bg lightened if focused
-        spans.push(Span::styled("", Style::new().fg(tab_u1_bg).bg(bar_bg)));
         spans.push(Span::styled(
             " 2:bash ",
             Style::new()
-                .fg(tab_u1_fg)
-                .bg(tab_u1_bg)
-                .add_modifier(Modifier::BOLD),
+                .fg(unsel_fg)
+                .bg(unsel_bg)
+                .add_modifier(Modifier::BOLD | selection_modifier(is_tab_u1)),
         ));
-        spans.push(Span::styled("", Style::new().fg(tab_u1_bg).bg(bar_bg)));
         spans.push(Span::styled(" ", Style::new().bg(bar_bg)));
 
-        // Unselected tab 3 pill — bg lightened if focused
-        spans.push(Span::styled("", Style::new().fg(tab_u2_bg).bg(bar_bg)));
         spans.push(Span::styled(
             " 3:nvim ",
             Style::new()
-                .fg(tab_u2_fg)
-                .bg(tab_u2_bg)
-                .add_modifier(Modifier::BOLD),
+                .fg(unsel_fg)
+                .bg(unsel_bg)
+                .add_modifier(Modifier::BOLD | selection_modifier(is_tab_u2)),
         ));
-        spans.push(Span::styled("", Style::new().fg(tab_u2_bg).bg(bar_bg)));
+        spans.push(Span::styled(" ", Style::new().bg(bar_bg)));
 
         let used: usize = spans.iter().map(|s| s.width()).sum::<usize>() + layout_label.len();
         let fill = (area.width as usize).saturating_sub(used);
@@ -206,14 +384,7 @@ impl App {
         let t = &self.theme;
         let is_editing_border = self.selected_element == PreviewElement::PaneSelected;
         let is_editing_text = self.selected_element == PreviewElement::TextSelected;
-        let base_pane_bg = get_bg(ThemeComponentType::FrameSelected, t);
-
-        // Lighten the whole pane bg when this pane frame is focused
-        let pane_bg = if is_editing_border {
-            lighten(base_pane_bg, 25)
-        } else {
-            base_pane_bg
-        };
+        let pane_bg = get_bg(ThemeComponentType::TextUnselected, t);
 
         let border_color = get_fg(ThemeComponentType::FrameSelected, t);
         let border_style = Style::new()
@@ -226,12 +397,6 @@ impl App {
 
         let text_sel_fg = get_fg(ThemeComponentType::TextSelected, t);
         let text_sel_bg = get_bg(ThemeComponentType::TextSelected, t);
-        // Lighten text-selected line when TextSelected element is focused
-        let tsel_bg = if is_editing_text {
-            lighten(text_sel_bg, 45)
-        } else {
-            text_sel_bg
-        };
 
         let content = vec![
             Line::from(Span::styled("$ ls", Style::new().fg(text_fg).bg(pane_bg))),
@@ -245,10 +410,14 @@ impl App {
                 } else {
                     " ▌projects/▐ "
                 },
-                Style::new()
-                    .fg(text_sel_fg)
-                    .bg(tsel_bg)
-                    .add_modifier(Modifier::BOLD),
+                if is_editing_text {
+                    Style::new()
+                        .fg(text_sel_fg)
+                        .bg(text_sel_bg)
+                        .add_modifier(Modifier::BOLD | selection_modifier(is_editing_text))
+                } else {
+                    Style::new().fg(text_fg).bg(pane_bg)
+                },
             )),
             Line::from(Span::styled(
                 "  videos/     music/",
@@ -269,8 +438,7 @@ impl App {
 
     fn render_pane_unselected(&self, frame: &mut Frame, area: Rect, text_fg: Color) {
         let is_editing = self.selected_element == PreviewElement::PaneUnselected;
-        let base_pane_bg = get_bg(ThemeComponentType::FrameUnselected, &self.theme);
-        let pane_bg = if is_editing { lighten(base_pane_bg, 25) } else { base_pane_bg };
+        let pane_bg = get_bg(ThemeComponentType::TextUnselected, &self.theme);
         let border_color = get_fg(ThemeComponentType::FrameUnselected, &self.theme);
         let border_style = Style::new().fg(border_color).add_modifier(if is_editing {
             Modifier::BOLD
@@ -306,15 +474,20 @@ impl App {
     fn render_pane_highlight(&self, frame: &mut Frame, area: Rect, text_fg: Color) {
         let t = &self.theme;
         let is_editing_frame = self.selected_element == PreviewElement::PaneHighlight;
-        let base_pane_bg = get_bg(ThemeComponentType::FrameHighlight, t);
-
-        // Lighten whole pane bg when the frame itself is focused
-        let pane_bg = if is_editing_frame {
-            lighten(base_pane_bg, 25)
+        let pane_bg = get_bg(ThemeComponentType::TextUnselected, t);
+        let (border_color, border_type, title) = if is_editing_frame {
+            (
+                get_fg(ThemeComponentType::FrameHighlight, t),
+                BorderType::Thick,
+                " Pane (Highlight) ",
+            )
         } else {
-            base_pane_bg
+            (
+                get_fg(ThemeComponentType::FrameUnselected, t),
+                BorderType::Plain,
+                " Pane ",
+            )
         };
-        let border_color = get_fg(ThemeComponentType::FrameHighlight, t);
         let border_style = Style::new()
             .fg(border_color)
             .add_modifier(if is_editing_frame {
@@ -339,32 +512,9 @@ impl App {
         let exit_err_fg = get_fg(ThemeComponentType::ExitCodeError, t);
         let exit_err_bg = get_bg(ThemeComponentType::ExitCodeError, t);
 
-        let sel = |elem: PreviewElement, fg: Color, bg_c: Color| -> (Color, Color) {
-            if self.selected_element == elem {
-                (fg, lighten(bg_c, 45))
-            } else {
-                (fg, bg_c)
-            }
-        };
         let sel_mod = |elem: PreviewElement| -> Modifier {
-            if self.selected_element == elem {
-                Modifier::BOLD
-            } else {
-                Modifier::empty()
-            }
+            Modifier::BOLD | selection_modifier(self.selected_element == elem)
         };
-
-        let (tt_fg, tt_bg) = sel(PreviewElement::TableTitle, tbl_title_fg, tbl_title_bg);
-        let (ts_fg, ts_bg) = sel(PreviewElement::TableCellSelected, tbl_sel_fg, tbl_sel_bg);
-        let (tu_fg, tu_bg) = sel(
-            PreviewElement::TableCellUnselected,
-            tbl_unsel_fg,
-            tbl_unsel_bg,
-        );
-        let (ls_fg, ls_bg) = sel(PreviewElement::ListSelected, list_sel_fg, list_sel_bg);
-        let (lu_fg, lu_bg) = sel(PreviewElement::ListUnselected, list_unsel_fg, list_unsel_bg);
-        let (eo_fg, eo_bg) = sel(PreviewElement::ExitSuccess, exit_ok_fg, exit_ok_bg);
-        let (ee_fg, ee_bg) = sel(PreviewElement::ExitError, exit_err_fg, exit_err_bg);
 
         let content = vec![
             // git status header lines
@@ -375,22 +525,22 @@ impl App {
             Line::from(Span::styled(
                 " Changes staged",
                 Style::new()
-                    .fg(tt_fg)
-                    .bg(tt_bg)
-                    .add_modifier(sel_mod(PreviewElement::TableTitle) | Modifier::BOLD),
+                    .fg(tbl_title_fg)
+                    .bg(tbl_title_bg)
+                    .add_modifier(sel_mod(PreviewElement::TableTitle)),
             )),
             Line::from(Span::styled(
                 "  modified: main.rs",
                 Style::new()
-                    .fg(ts_fg)
-                    .bg(ts_bg)
+                    .fg(tbl_sel_fg)
+                    .bg(tbl_sel_bg)
                     .add_modifier(sel_mod(PreviewElement::TableCellSelected)),
             )),
             Line::from(Span::styled(
                 "  modified: lib.rs",
                 Style::new()
-                    .fg(tu_fg)
-                    .bg(tu_bg)
+                    .fg(tbl_unsel_fg)
+                    .bg(tbl_unsel_bg)
                     .add_modifier(sel_mod(PreviewElement::TableCellUnselected)),
             )),
             Line::from(Span::raw("")),
@@ -398,15 +548,15 @@ impl App {
             Line::from(Span::styled(
                 " Untracked files",
                 Style::new()
-                    .fg(ls_fg)
-                    .bg(ls_bg)
-                    .add_modifier(sel_mod(PreviewElement::ListSelected) | Modifier::BOLD),
+                    .fg(list_sel_fg)
+                    .bg(list_sel_bg)
+                    .add_modifier(sel_mod(PreviewElement::ListSelected)),
             )),
             Line::from(Span::styled(
                 "  src/utils.rs",
                 Style::new()
-                    .fg(lu_fg)
-                    .bg(lu_bg)
+                    .fg(list_unsel_fg)
+                    .bg(list_unsel_bg)
                     .add_modifier(sel_mod(PreviewElement::ListUnselected)),
             )),
             Line::from(Span::styled(
@@ -420,24 +570,24 @@ impl App {
                 Span::styled(
                     " exit 0 ",
                     Style::new()
-                        .fg(eo_fg)
-                        .bg(eo_bg)
+                        .fg(exit_ok_fg)
+                        .bg(exit_ok_bg)
                         .add_modifier(sel_mod(PreviewElement::ExitSuccess)),
                 ),
                 Span::styled("  ", Style::new().bg(pane_bg)),
                 Span::styled(
                     " exit 1 ",
                     Style::new()
-                        .fg(ee_fg)
-                        .bg(ee_bg)
+                        .fg(exit_err_fg)
+                        .bg(exit_err_bg)
                         .add_modifier(sel_mod(PreviewElement::ExitError)),
                 ),
             ]),
         ];
 
         let block = Block::bordered()
-            .border_type(BorderType::Thick)
-            .title(" Pane (Highlight) ")
+            .border_type(border_type)
+            .title(title)
             .title_style(border_style)
             .border_style(border_style)
             .style(Style::new().bg(pane_bg));
@@ -456,7 +606,7 @@ impl App {
 
         // Mode label changes based on app state and selection
         let (mode_label, mode_fg, mode_bg) = if is_editing_status {
-            (" STATUS ", sel_fg, lighten(sel_bg, 40))
+            (" STATUS ", sel_fg, sel_bg)
         } else {
             match self.input_mode {
                 InputMode::ColorPicker => (" COLOR  ", sel_fg, sel_bg),
@@ -614,7 +764,10 @@ impl App {
         spans.push(Span::styled("", Style::new().fg(mode_bg).bg(bar_bg)));
         spans.push(Span::styled(
             mode_label,
-            Style::new().fg(mode_fg).bg(mode_bg).add_modifier(Modifier::BOLD),
+            Style::new()
+                .fg(mode_fg)
+                .bg(mode_bg)
+                .add_modifier(Modifier::BOLD | selection_modifier(is_editing_status)),
         ));
         spans.push(Span::styled("", Style::new().fg(mode_bg).bg(bar_bg)));
         spans.push(gap());

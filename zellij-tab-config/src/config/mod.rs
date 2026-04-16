@@ -1,5 +1,5 @@
 use crate::theme::{RgbColor, Theme, ThemeComponent, ThemeComponentType};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -191,8 +191,11 @@ pub fn parse_theme_kdl(content: &str, name: &str) -> Result<Theme, ConfigError> 
         return Ok(theme_from_palette(&children, name));
     }
 
+    let palette = build_scalar_palette(&children);
+
     let mut theme = Theme::default();
     theme.name = name.to_string();
+    let mut seen = HashSet::new();
 
     for child in &children {
         let component_type = match child.name().value() {
@@ -213,9 +216,12 @@ pub fn parse_theme_kdl(content: &str, name: &str) -> Result<Theme, ConfigError> 
             _ => continue,
         };
 
-        let component = parse_component(child);
+        let component = parse_component(child, &palette);
         *theme.get_mut(component_type) = component;
+        seen.insert(component_type);
     }
+
+    apply_missing_component_fallbacks(&mut theme, &seen);
 
     Ok(theme)
 }
@@ -230,6 +236,74 @@ fn parse_palette_color(nodes: &[kdl::KdlNode], key: &str) -> Option<RgbColor> {
     let g = entries[1].value().as_i64()?.clamp(0, 255) as u8;
     let b = entries[2].value().as_i64()?.clamp(0, 255) as u8;
     Some(RgbColor::new(r, g, b))
+}
+
+fn default_ansi_palette() -> [RgbColor; 16] {
+    [
+        RgbColor::new(0, 0, 0),
+        RgbColor::new(205, 0, 0),
+        RgbColor::new(0, 205, 0),
+        RgbColor::new(205, 205, 0),
+        RgbColor::new(0, 0, 238),
+        RgbColor::new(205, 0, 205),
+        RgbColor::new(0, 205, 205),
+        RgbColor::new(229, 229, 229),
+        RgbColor::new(127, 127, 127),
+        RgbColor::new(255, 0, 0),
+        RgbColor::new(0, 255, 0),
+        RgbColor::new(255, 255, 0),
+        RgbColor::new(92, 92, 255),
+        RgbColor::new(255, 0, 255),
+        RgbColor::new(0, 255, 255),
+        RgbColor::new(255, 255, 255),
+    ]
+}
+
+fn build_scalar_palette(nodes: &[kdl::KdlNode]) -> [RgbColor; 16] {
+    let mut palette = default_ansi_palette();
+
+    for (index, key) in [
+        (0, "black"),
+        (1, "red"),
+        (2, "green"),
+        (3, "yellow"),
+        (4, "blue"),
+        (5, "magenta"),
+        (6, "cyan"),
+        (7, "white"),
+    ] {
+        if let Some(color) = parse_palette_color(nodes, key) {
+            palette[index] = color;
+        }
+    }
+
+    palette
+}
+
+fn muted_from_text(text: &ThemeComponent) -> RgbColor {
+    let blend = |bg: u8, fg: u8| -> u8 {
+        ((u16::from(bg) * 3 + u16::from(fg)) / 4) as u8
+    };
+
+    RgbColor::new(
+        blend(text.background.r, text.base.r),
+        blend(text.background.g, text.base.g),
+        blend(text.background.b, text.base.b),
+    )
+}
+
+fn apply_missing_component_fallbacks(theme: &mut Theme, seen: &HashSet<ThemeComponentType>) {
+    if !seen.contains(&ThemeComponentType::FrameUnselected) {
+        let text = theme.get(ThemeComponentType::TextUnselected).clone();
+        *theme.get_mut(ThemeComponentType::FrameUnselected) = ThemeComponent {
+            base: muted_from_text(&text),
+            background: text.background,
+            emphasis_0: text.emphasis_0,
+            emphasis_1: text.emphasis_1,
+            emphasis_2: text.emphasis_2,
+            emphasis_3: text.emphasis_3,
+        };
+    }
 }
 
 fn theme_from_palette(nodes: &[kdl::KdlNode], name: &str) -> Theme {
@@ -282,7 +356,7 @@ fn theme_from_palette(nodes: &[kdl::KdlNode], name: &str) -> Theme {
     }
 }
 
-fn parse_component(node: &kdl::KdlNode) -> ThemeComponent {
+fn parse_component(node: &kdl::KdlNode, palette: &[RgbColor; 16]) -> ThemeComponent {
     let mut component = ThemeComponent::default();
 
     let children = match node.children() {
@@ -292,13 +366,22 @@ fn parse_component(node: &kdl::KdlNode) -> ThemeComponent {
 
     for child in &children {
         let entries: Vec<_> = child.entries().iter().collect();
-        if entries.len() < 3 {
-            continue;
-        }
-        let r = entries[0].value().as_i64().unwrap_or(0).clamp(0, 255) as u8;
-        let g = entries[1].value().as_i64().unwrap_or(0).clamp(0, 255) as u8;
-        let b = entries[2].value().as_i64().unwrap_or(0).clamp(0, 255) as u8;
-        let color = RgbColor::new(r, g, b);
+        let color = match entries.len() {
+            1 => {
+                let idx = entries[0].value().as_i64().unwrap_or(-1);
+                if !(0..=15).contains(&idx) {
+                    continue;
+                }
+                palette[idx as usize]
+            }
+            3.. => {
+                let r = entries[0].value().as_i64().unwrap_or(0).clamp(0, 255) as u8;
+                let g = entries[1].value().as_i64().unwrap_or(0).clamp(0, 255) as u8;
+                let b = entries[2].value().as_i64().unwrap_or(0).clamp(0, 255) as u8;
+                RgbColor::new(r, g, b)
+            }
+            _ => continue,
+        };
 
         match child.name().value() {
             "base" => component.base = color,
@@ -400,5 +483,81 @@ mod tests {
             loaded.get(ThemeComponentType::TextSelected).base,
             RgbColor::new(9, 8, 7)
         );
+    }
+
+    #[test]
+    fn dracula_scalar_component_values_are_resolved() {
+        let theme = parse_theme_kdl(include_str!("../bundled_themes/dracula.kdl"), "dracula")
+            .expect("dracula should parse");
+
+        assert_eq!(
+            theme.get(ThemeComponentType::TableTitle).background,
+            RgbColor::new(0, 0, 0)
+        );
+        assert_eq!(
+            theme.get(ThemeComponentType::FrameSelected).background,
+            RgbColor::new(0, 0, 0)
+        );
+        assert_eq!(
+            theme.get(ThemeComponentType::FrameHighlight).background,
+            RgbColor::new(0, 0, 0)
+        );
+        assert_eq!(
+            theme.get(ThemeComponentType::ExitCodeSuccess).background,
+            RgbColor::new(0, 0, 0)
+        );
+        assert_eq!(
+            theme.get(ThemeComponentType::ExitCodeError).background,
+            RgbColor::new(0, 0, 0)
+        );
+    }
+
+    #[test]
+    fn ansi_scalar_palette_indexes_map_to_expected_rgb() {
+        let theme = parse_theme_kdl(include_str!("../bundled_themes/ansi.kdl"), "ansi")
+            .expect("ansi should parse");
+
+        assert_eq!(
+            theme.get(ThemeComponentType::TextUnselected).base,
+            RgbColor::new(255, 255, 255)
+        );
+        assert_eq!(
+            theme.get(ThemeComponentType::TextSelected).background,
+            RgbColor::new(127, 127, 127)
+        );
+        assert_eq!(
+            theme.get(ThemeComponentType::RibbonSelected).background,
+            RgbColor::new(0, 205, 0)
+        );
+    }
+
+    #[test]
+    fn missing_frame_unselected_gets_theme_relative_fallback() {
+        let theme = parse_theme_kdl(include_str!("../bundled_themes/dracula.kdl"), "dracula")
+            .expect("dracula should parse");
+
+        assert_eq!(
+            theme.get(ThemeComponentType::FrameUnselected).background,
+            RgbColor::new(0, 0, 0)
+        );
+        assert_eq!(
+            theme.get(ThemeComponentType::FrameUnselected).base,
+            RgbColor::new(63, 63, 63)
+        );
+    }
+
+    #[test]
+    fn bundled_themes_are_fully_explicit_and_parse_cleanly() {
+        for (name, content) in crate::bundled_themes::THEMES {
+            let theme = parse_theme_kdl(content, name).expect("bundled theme should parse");
+            for component_type in ThemeComponentType::all() {
+                assert!(
+                    content.contains(&format!("{} {{", component_type.component_key())),
+                    "bundled theme {name} is missing component {}",
+                    component_type.component_key()
+                );
+                let _ = theme.get(*component_type);
+            }
+        }
     }
 }

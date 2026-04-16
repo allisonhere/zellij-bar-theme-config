@@ -509,6 +509,7 @@ pub fn process_mouse(app: &mut App, mouse: MouseEvent) {
 
 pub fn run(mut app: App) -> Result<(), Box<dyn std::error::Error>> {
     app.start_update_check();
+    crossterm::style::force_color_output(true);
 
     let mut terminal = ratatui::init();
     terminal.show_cursor()?;
