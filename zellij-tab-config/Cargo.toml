@@ -1,6 +1,6 @@
 [package]
 name = "zellij_tab_config"
-version = "0.3.8"
+version = "0.4.0"
 edition = "2021"
 
 [dependencies]
