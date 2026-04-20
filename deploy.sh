@@ -123,6 +123,10 @@ git add "$CARGO_TOML"
 git commit -m "chore: bump version to ${NEW_TAG}"
 ok "Bumped Cargo.toml to ${SEMVER}"
 
+step "Pushing version bump"
+git push
+ok "Pushed version bump"
+
 # ── Tag & push ────────────────────────────────────────────────────────────────
 echo ""
 step "Tagging ${NEW_TAG}"
