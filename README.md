@@ -2,6 +2,8 @@
 
 A terminal UI for creating, editing, and applying [Zellij](https://zellij.dev) themes. Live preview of your changes across all UI components — tab bar, panes, status bar, tables, lists — before writing anything to disk.
 
+![zellij-bar-theme-config screenshot](pic.png)
+
 ## Features
 
 - **Live preview** — see every color change reflected instantly across a full Zellij-layout mockup
