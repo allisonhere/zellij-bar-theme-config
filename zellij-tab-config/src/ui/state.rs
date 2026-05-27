@@ -47,10 +47,8 @@ pub struct App {
     pub theme_search_query: String,
     pub search_focused: bool,
     pub help_scroll: u16,
-    // Feature 3: copy/paste color
     pub clipboard_color: Option<crate::theme::RgbColor>,
-    // Feature 4: undo
-    pub undo_history: std::collections::HashMap<(PreviewElement, PreviewAttribute), crate::theme::RgbColor>,
+    pub undo_stack: Vec<(PreviewElement, PreviewAttribute, crate::theme::RgbColor)>,
     // Feature 5: rename/delete
     pub loader_action_index: usize,
     // Self-update
@@ -301,7 +299,7 @@ impl Default for App {
             search_focused: false,
             help_scroll: 0,
             clipboard_color: None,
-            undo_history: std::collections::HashMap::new(),
+            undo_stack: Vec::new(),
             loader_action_index: 0,
             update_status: UpdateStatus::Idle,
             update_rx: None,
@@ -629,31 +627,52 @@ impl App {
 
     pub fn paste_color(&mut self) {
         if let Some(c) = self.clipboard_color {
+            let before = self.get_color_by_attr(self.selected_attribute);
+            self.push_undo(self.selected_element, self.selected_attribute, before);
             self.set_color_by_attr(self.selected_attribute, c);
-            self.dirty = true;
             self.message = Some(format!("Pasted #{:02x}{:02x}{:02x}", c.r, c.g, c.b));
         } else {
-            self.message = Some(String::from("Nothing to yank"));
+            self.message = Some(String::from("Nothing to paste"));
         }
     }
 
-    // Feature 4: undo
+    fn push_undo(&mut self, element: PreviewElement, attr: PreviewAttribute, color: RgbColor) {
+        self.undo_stack.push((element, attr, color));
+        const MAX: usize = 64;
+        if self.undo_stack.len() > MAX {
+            self.undo_stack.remove(0);
+        }
+    }
+
     pub fn record_undo(&mut self) {
         if let Some(ref orig) = self.original_component {
-            let before = match self.selected_attribute {
-                PreviewAttribute::Base => orig.base,
-                PreviewAttribute::Background => orig.background,
-            };
-            self.undo_history.insert((self.selected_element, self.selected_attribute), before);
+            let comp_type = self.selected_element.component_type();
+            let current = self.theme.get(comp_type);
+            let base_changed = current.base != orig.base;
+            let bg_changed = current.background != orig.background;
+            let orig_base = orig.base;
+            let orig_bg = orig.background;
+            let element = self.selected_element;
+            if base_changed {
+                self.push_undo(element, PreviewAttribute::Base, orig_base);
+            }
+            if bg_changed {
+                self.push_undo(element, PreviewAttribute::Background, orig_bg);
+            }
         }
     }
 
     pub fn undo_color(&mut self) {
-        let key = (self.selected_element, self.selected_attribute);
-        if let Some(prev) = self.undo_history.remove(&key) {
-            self.set_color_by_attr(self.selected_attribute, prev);
-            self.dirty = true;
-            self.message = Some(String::from("Undone"));
+        if let Some((element, attr, color)) = self.undo_stack.pop() {
+            self.selected_element = element;
+            self.selected_attribute = attr;
+            self.set_color_by_attr(attr, color);
+            let remaining = self.undo_stack.len();
+            self.message = Some(if remaining == 0 {
+                String::from("Undone")
+            } else {
+                format!("Undone ({} more)", remaining)
+            });
         } else {
             self.message = Some(String::from("Nothing to undo"));
         }
