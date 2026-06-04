@@ -113,7 +113,7 @@ mod tests {
         assert_eq!(buffer[exit_ok].fg, rgb(80, 250, 123));
         assert_eq!(buffer[exit_ok].bg, rgb(0, 0, 0));
 
-        let empty_pane_cell = &buffer[(2, 8)];
+        let empty_pane_cell = &buffer[(2, 10)];
         assert_eq!(empty_pane_cell.bg, rgb(0, 0, 0));
         assert_eq!(empty_pane_cell.fg, Color::Reset);
     }
@@ -126,7 +126,7 @@ mod tests {
         let frame = terminal.draw(|f| app.render(f)).expect("draw should succeed");
         let buffer = &frame.buffer;
 
-        let right_pane_border = &buffer[(72, 2)];
+        let right_pane_border = &buffer[(72, 4)];
         assert_eq!(right_pane_border.fg, expected);
     }
 
@@ -138,7 +138,7 @@ mod tests {
         let frame = terminal.draw(|f| app.render(f)).expect("draw should succeed");
         let buffer = &frame.buffer;
 
-        let left_pane_border = &buffer[(0, 1)];
+        let left_pane_border = &buffer[(0, 3)];
         assert_eq!(left_pane_border.fg, expected);
     }
 
@@ -167,7 +167,7 @@ mod tests {
         let frame = terminal.draw(|f| app.render(f)).expect("draw should succeed");
         let buffer = &frame.buffer;
 
-        let right_pane_border = &buffer[(72, 2)];
+        let right_pane_border = &buffer[(72, 4)];
         assert_eq!(right_pane_border.fg, expected);
     }
 
@@ -180,7 +180,7 @@ mod tests {
         let frame = terminal.draw(|f| app.render(f)).expect("draw should succeed");
         let buffer = &frame.buffer;
 
-        let left_pane_border = &buffer[(0, 1)];
+        let left_pane_border = &buffer[(0, 3)];
         assert_eq!(left_pane_border.fg, expected);
     }
 
@@ -232,6 +232,21 @@ pub fn get_bg(comp: ThemeComponentType, theme: &crate::theme::Theme) -> Color {
     Color::Rgb(c.background.r, c.background.g, c.background.b)
 }
 
+/// Return a contrasting color (dark or light) readable atop the given `Color`.
+pub fn accent_on(color: Color) -> Color {
+    match color {
+        Color::Rgb(r, g, b) => {
+            let lum = (0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32) / 255.0;
+            if lum > 0.55 {
+                Color::Rgb(18, 18, 24)
+            } else {
+                Color::Rgb(245, 245, 250)
+            }
+        }
+        _ => Color::White,
+    }
+}
+
 pub fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
     let popup_width = width.min(area.width.saturating_sub(2)).max(1);
     let popup_height = height.min(area.height.saturating_sub(2)).max(1);
@@ -257,6 +272,11 @@ fn selection_modifier(selected: bool) -> Modifier {
 }
 
 impl App {
+    /// True if this element is selected AND the flash is in an "on" phase.
+    fn is_element_active(&self, element: PreviewElement) -> bool {
+        self.selected_element == element && !self.is_flashing_off()
+    }
+
     pub fn render(&self, frame: &mut Frame) {
         match self.input_mode {
             InputMode::Preview => self.render_preview(frame),
@@ -276,6 +296,10 @@ impl App {
                 self.render_preview(frame);
                 self.render_update_restart_overlay(frame);
             }
+            InputMode::FieldSearch => {
+                self.render_preview(frame);
+                self.render_field_search_overlay(frame);
+            }
             InputMode::Help => self.render_help_mode(frame),
         }
     }
@@ -284,16 +308,183 @@ impl App {
 
     fn render_preview(&self, frame: &mut Frame) {
         let area = frame.area();
-        let [tab_bar, main, status_bar] = Layout::vertical([
+        let [group_tabs, field_selector, tab_bar, main, status_bar] = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Fill(1),
             Constraint::Length(1),
         ])
         .areas(area);
 
+        self.render_group_tabs(frame, group_tabs);
+        self.render_field_selector(frame, field_selector);
         self.render_zellij_tab_bar(frame, tab_bar);
         self.render_zellij_panes(frame, main);
         self.render_zellij_status_bar(frame, status_bar);
+    }
+
+    // ── Two-tier element selector ────────────────────────────────────────
+
+    /// Row 1: Group pills with the active one highlighted.
+    fn render_group_tabs(&self, frame: &mut Frame, area: Rect) {
+        const BG: Color = Color::Rgb(22, 22, 26);
+        const FG: Color = Color::Rgb(120, 120, 145);
+        const ACCENT_BG: Color = Color::Rgb(97, 88, 150);
+        const ACCENT_FG: Color = Color::Rgb(242, 240, 255);
+
+        let active = self.selected_group;
+        let mut spans: Vec<Span> = Vec::new();
+        for (i, g) in super::state::PreviewGroup::all().iter().enumerate() {
+            let is_active = *g == active;
+            let (fg, bg, m) = if is_active {
+                (ACCENT_FG, ACCENT_BG, Modifier::BOLD)
+            } else {
+                (FG, BG, Modifier::empty())
+            };
+            spans.push(Span::styled(
+                format!(" {} {} ", i + 1, g.label()),
+                Style::new().fg(fg).bg(bg).add_modifier(m),
+            ));
+            spans.push(Span::styled(" ", Style::new().bg(BG)));
+        }
+        spans.push(Span::styled(
+            "  1-4 / ←→ Tab group · ↑↓ field · / find",
+            Style::new().fg(FG).bg(BG),
+        ));
+        frame.render_widget(
+            Paragraph::new(Line::from(spans)).style(Style::new().bg(BG)),
+            area,
+        );
+    }
+
+    /// Row 2: Current group's fields as chips — swatch + label.
+    fn render_field_selector(&self, frame: &mut Frame, area: Rect) {
+        const BG: Color = Color::Rgb(22, 22, 26);
+        const MUTED: Color = Color::Rgb(120, 120, 145);
+        const SEL_BG: Color = Color::Rgb(44, 41, 60);
+        const ACCENT_FG: Color = Color::Rgb(242, 240, 255);
+
+        let group = self.selected_group;
+        let t = &self.theme;
+
+        let mut chips: Vec<Span> = Vec::new();
+        for f in group.fields() {
+            let selected = *f == self.selected_element;
+            let fg = get_fg(f.component_type(), t);
+            let bg = get_bg(f.component_type(), t);
+            let fg_ct = accent_on(fg);
+            let bg_ct = accent_on(bg);
+            let has_bg = !f.is_frame();
+
+            if selected {
+                chips.push(Span::styled("\u{258f}", Style::new().fg(ACCENT_FG).bg(SEL_BG)));
+                if has_bg {
+                    chips.push(Span::styled("F", Style::new().fg(fg_ct).bg(fg)));
+                } else {
+                    chips.push(Span::styled(" ", Style::new().bg(fg)));
+                }
+                if has_bg {
+                    chips.push(Span::styled("B", Style::new().fg(bg_ct).bg(bg)));
+                }
+                chips.push(Span::styled(
+                    format!(" {} ", f.label()),
+                    Style::new().fg(ACCENT_FG).bg(SEL_BG).add_modifier(Modifier::BOLD),
+                ));
+                chips.push(Span::styled("\u{2595}", Style::new().fg(ACCENT_FG).bg(SEL_BG)));
+            } else {
+                chips.push(Span::styled(" ", Style::new().bg(BG)));
+                if has_bg {
+                    chips.push(Span::styled("F", Style::new().fg(fg_ct).bg(fg)));
+                } else {
+                    chips.push(Span::styled(" ", Style::new().bg(fg)));
+                }
+                if has_bg {
+                    chips.push(Span::styled("B", Style::new().fg(bg_ct).bg(bg)));
+                } else {
+                    chips.push(Span::styled(" ", Style::new().bg(BG)));
+                }
+                chips.push(Span::styled(
+                    format!(" {} ", f.label()),
+                    Style::new().fg(MUTED).bg(BG),
+                ));
+                chips.push(Span::styled("  ", Style::new().bg(BG)));
+            }
+        }
+        // Show FG/BG toggle hint
+        chips.push(Span::styled(
+            "  Tab = FG/BG",
+            Style::new().fg(MUTED).bg(BG),
+        ));
+        frame.render_widget(
+            Paragraph::new(Line::from(chips)).style(Style::new().bg(BG)),
+            area,
+        );
+    }
+
+    // ── Field search overlay ─────────────────────────────────────────────
+
+    fn render_field_search_overlay(&self, frame: &mut Frame) {
+        let area = centered_rect(frame.area(), 60, 8);
+        let bg = Color::Rgb(22, 22, 26);
+        let fg = Color::Rgb(212, 212, 230);
+        let muted = Color::Rgb(120, 120, 145);
+        let accent_bg = Color::Rgb(97, 88, 150);
+        let accent_fg = Color::Rgb(242, 240, 255);
+
+        frame.render_widget(Clear, area);
+        let block = Block::bordered()
+            .border_type(BorderType::Rounded)
+            .title(" Find Field ")
+            .title_style(Style::new().fg(accent_fg).add_modifier(Modifier::BOLD))
+            .border_style(Style::new().fg(Color::Rgb(90, 85, 115)))
+            .style(Style::new().bg(bg));
+        frame.render_widget(block.clone(), area);
+        let inner = block.inner(area);
+
+        let [input_area, list_area] =
+            Layout::vertical([Constraint::Length(2), Constraint::Fill(1)]).areas(inner);
+
+        // Query input line
+        let query_display = if self.field_search_query.is_empty() {
+            Span::styled("type to search fields…", Style::new().fg(muted))
+        } else {
+            Span::styled(
+                format!("/{}", self.field_search_query),
+                Style::new().fg(fg),
+            )
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![Span::styled(" / ", Style::new().fg(accent_fg)), query_display]))
+                .style(Style::new().bg(bg)),
+            input_area,
+        );
+
+        // Results list
+        let matches = self.filtered_fields();
+        let mut lines: Vec<Line> = Vec::new();
+        for (i, f) in matches.iter().enumerate() {
+            let is_selected = i == self.field_search_index;
+            let (line_fg, line_bg, modif) = if is_selected {
+                (accent_fg, accent_bg, Modifier::BOLD)
+            } else {
+                (fg, bg, Modifier::empty())
+            };
+            lines.push(Line::from(vec![Span::styled(
+                format!("  {}  {}", f.group().label(), f.label()),
+                Style::new().fg(line_fg).bg(line_bg).add_modifier(modif),
+            )]));
+        }
+        if lines.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "  no matches",
+                Style::new().fg(muted),
+            )));
+        }
+        frame.render_widget(
+            Paragraph::new(lines).style(Style::new().bg(bg)),
+            list_area,
+        );
     }
 
     fn render_zellij_tab_bar(&self, frame: &mut Frame, area: Rect) {
@@ -305,9 +496,9 @@ impl App {
         let bar_bg = get_bg(ThemeComponentType::TextUnselected, t);
         let bar_fg = get_fg(ThemeComponentType::TextUnselected, t);
 
-        let is_tab_sel = self.selected_element == PreviewElement::TabSelected;
-        let is_tab_u1 = self.selected_element == PreviewElement::TabUnselected1;
-        let is_tab_u2 = self.selected_element == PreviewElement::TabUnselected2;
+        let is_tab_sel = self.is_element_active(PreviewElement::TabSelected);
+        let is_tab_u1 = self.is_element_active(PreviewElement::TabUnselected1);
+        let is_tab_u2 = self.is_element_active(PreviewElement::TabUnselected2);
 
         let layout_label = " layout: default ";
 
@@ -384,16 +575,37 @@ impl App {
         let t = &self.theme;
         let is_editing_border = self.selected_element == PreviewElement::PaneSelected;
         let is_editing_text = self.selected_element == PreviewElement::TextSelected;
+        let flashing = self.is_flashing_off();
         let pane_bg = get_bg(ThemeComponentType::TextUnselected, t);
 
+        let dim_color = |c: Color| -> Color {
+            if let Color::Rgb(r, g, b) = c {
+                Color::Rgb(r / 3, g / 3, b / 3)
+            } else {
+                Color::DarkGray
+            }
+        };
         let border_color = get_fg(ThemeComponentType::FrameSelected, t);
         let border_style = Style::new()
-            .fg(border_color)
+            .fg(if is_editing_border && !flashing {
+                border_color
+            } else if is_editing_border {
+                dim_color(border_color)
+            } else {
+                border_color
+            })
             .add_modifier(if is_editing_border {
                 Modifier::BOLD
             } else {
                 Modifier::empty()
             });
+        let border_type = if is_editing_border && !flashing {
+            BorderType::Double
+        } else if is_editing_border {
+            BorderType::Thick
+        } else {
+            BorderType::Double
+        };
 
         let text_sel_fg = get_fg(ThemeComponentType::TextSelected, t);
         let text_sel_bg = get_bg(ThemeComponentType::TextSelected, t);
@@ -427,7 +639,7 @@ impl App {
         ];
 
         let block = Block::bordered()
-            .border_type(BorderType::Double)
+            .border_type(border_type)
             .title(" Pane (Selected) ")
             .title_style(border_style)
             .border_style(border_style)
@@ -438,13 +650,36 @@ impl App {
 
     fn render_pane_unselected(&self, frame: &mut Frame, area: Rect, text_fg: Color) {
         let is_editing = self.selected_element == PreviewElement::PaneUnselected;
+        let flashing = self.is_flashing_off();
         let pane_bg = get_bg(ThemeComponentType::TextUnselected, &self.theme);
         let border_color = get_fg(ThemeComponentType::FrameUnselected, &self.theme);
-        let border_style = Style::new().fg(border_color).add_modifier(if is_editing {
-            Modifier::BOLD
+        let dim = |c: Color| -> Color {
+            if let Color::Rgb(r, g, b) = c {
+                Color::Rgb(r / 3, g / 3, b / 3)
+            } else {
+                Color::DarkGray
+            }
+        };
+        let border_style = Style::new()
+            .fg(if is_editing && !flashing {
+                border_color
+            } else if is_editing {
+                dim(border_color)
+            } else {
+                border_color
+            })
+            .add_modifier(if is_editing {
+                Modifier::BOLD
+            } else {
+                Modifier::empty()
+            });
+        let border_type = if is_editing && !flashing {
+            BorderType::Plain
+        } else if is_editing {
+            BorderType::Thick
         } else {
-            Modifier::empty()
-        });
+            BorderType::Plain
+        };
 
         let content = vec![
             Line::from(Span::styled(
@@ -462,7 +697,7 @@ impl App {
         ];
 
         let block = Block::bordered()
-            .border_type(BorderType::Plain)
+            .border_type(border_type)
             .title(" Pane (Unselected) ")
             .title_style(border_style)
             .border_style(border_style)
@@ -473,7 +708,7 @@ impl App {
 
     fn render_pane_highlight(&self, frame: &mut Frame, area: Rect, text_fg: Color) {
         let t = &self.theme;
-        let is_editing_frame = self.selected_element == PreviewElement::PaneHighlight;
+        let is_editing_frame = self.is_element_active(PreviewElement::PaneHighlight);
         let pane_bg = get_bg(ThemeComponentType::TextUnselected, t);
         let (border_color, border_type, title) = if is_editing_frame {
             (
@@ -618,6 +853,7 @@ impl App {
                 InputMode::ThemeLoadRename => (" RENAME ", sel_fg, sel_bg),
                 InputMode::ThemeLoadDeleteConfirm => (" DELETE ", Color::Rgb(255, 100, 100), Color::Rgb(80, 20, 20)),
                 InputMode::UpdateRestartConfirm => (" UPDATE ", sel_fg, sel_bg),
+                InputMode::FieldSearch => (" FIND   ", sel_fg, sel_bg),
                 InputMode::Help => (" HELP   ", sel_fg, sel_bg),
             }
         };
@@ -667,16 +903,29 @@ impl App {
                 ("q",    "QUIT",       "QT"),
             ],
             InputMode::ColorPicker => {
-                const BINDINGS: &[(&str, &str, &str)] = &[
-                    ("tab",    "FOCUS",   "TAB"),
-                    ("m",      "MODE",    "MD"),
-                    ("f",      "FG/BG",   "F/B"),
-                    ("drag",   "PICK",    "PK"),
-                    ("#",      "HEX",     "HX"),
-                    ("Enter",  "EDIT/OK", "OK"),
-                    ("Esc",    "CANCEL",  "ESC"),
-                ];
-                BINDINGS
+                let show_fg_bg = !self.selected_element.is_frame();
+                if show_fg_bg {
+                    const ALL: &[(&str, &str, &str)] = &[
+                        ("tab", "FOCUS", "TAB"),
+                        ("m", "MODE", "MD"),
+                        ("f", "FG/BG", "F/B"),
+                        ("drag", "PICK", "PK"),
+                        ("#", "HEX", "HX"),
+                        ("Enter", "EDIT/OK", "OK"),
+                        ("Esc", "CANCEL", "ESC"),
+                    ];
+                    ALL
+                } else {
+                    const NO_F: &[(&str, &str, &str)] = &[
+                        ("tab", "FOCUS", "TAB"),
+                        ("m", "MODE", "MD"),
+                        ("drag", "PICK", "PK"),
+                        ("#", "HEX", "HX"),
+                        ("Enter", "EDIT/OK", "OK"),
+                        ("Esc", "CANCEL", "ESC"),
+                    ];
+                    NO_F
+                }
             }
             InputMode::ThemeNameInput | InputMode::ThemeNameInputApply => &[
                 ("type",  "NAME",   "NM"),
@@ -704,8 +953,13 @@ impl App {
             ],
             InputMode::UpdateRestartConfirm => &[
                 ("Enter", "RESTART", "OK"),
-                ("l",     "LATER",   "L"),
-                ("Esc",   "LATER",   "X"),
+                ("l", "LATER", "L"),
+                ("Esc", "LATER", "X"),
+            ],
+            InputMode::FieldSearch => &[
+                ("type", "SEARCH", "SRCH"),
+                ("Enter", "SELECT", "OK"),
+                ("Esc", "CANCEL", "ESC"),
             ],
             InputMode::Help => &[
                 ("↑↓", "SCROLL", "SCR"),
@@ -1296,26 +1550,32 @@ impl App {
             );
         }
 
-        let footer_lines = vec![
-            Line::from(vec![
-                Span::styled(" Tab ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
-                Span::styled(" focus  ", Style::new().fg(OB_MUTED)),
-                Span::styled(" M ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
-                Span::styled(" switch  ", Style::new().fg(OB_MUTED)),
-                Span::styled(" F ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
-                Span::styled(" fg/bg  ", Style::new().fg(OB_MUTED)),
-                Span::styled(" Enter ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
-                Span::styled(" edit/keep", Style::new().fg(OB_MUTED)),
-            ]),
-            Line::from(vec![
-                Span::styled(" Mouse ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
-                Span::styled(" drag  ", Style::new().fg(OB_MUTED)),
-                Span::styled(" # ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
-                Span::styled(" hex  ", Style::new().fg(OB_MUTED)),
-                Span::styled(" Esc ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
-                Span::styled(" cancel", Style::new().fg(OB_MUTED)),
-            ]),
+        let mut footer_lines = vec![];
+
+        // Row 1
+        let mut row1: Vec<Span> = vec![
+            Span::styled(" Tab ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+            Span::styled(" focus  ", Style::new().fg(OB_MUTED)),
+            Span::styled(" M ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+            Span::styled(" switch  ", Style::new().fg(OB_MUTED)),
         ];
+        if !self.selected_element.is_frame() {
+            row1.push(Span::styled(" F ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)));
+            row1.push(Span::styled(" fg/bg  ", Style::new().fg(OB_MUTED)));
+        }
+        row1.push(Span::styled(" Enter ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)));
+        row1.push(Span::styled(" edit/keep", Style::new().fg(OB_MUTED)));
+        footer_lines.push(Line::from(row1));
+
+        // Row 2
+        footer_lines.push(Line::from(vec![
+            Span::styled(" Mouse ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+            Span::styled(" drag  ", Style::new().fg(OB_MUTED)),
+            Span::styled(" # ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+            Span::styled(" hex  ", Style::new().fg(OB_MUTED)),
+            Span::styled(" Esc ", Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD)),
+            Span::styled(" cancel", Style::new().fg(OB_MUTED)),
+        ]));
         frame.render_widget(
             Paragraph::new(footer_lines).style(Style::new().bg(OB_BG)),
             footer,

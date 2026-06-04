@@ -1,6 +1,7 @@
 use crate::theme::{RgbColor, Theme, ThemeComponent, ThemeComponentType};
 use crate::update::UpdateMsg;
 use crate::ui::color_picker::ColorEditor;
+use std::time::Instant;
 
 #[derive(Debug, Clone)]
 pub enum ThemeEntry {
@@ -29,6 +30,7 @@ pub enum ThemeFilter {
 
 pub struct App {
     pub theme: Theme,
+    pub selected_group: PreviewGroup,
     pub selected_element: PreviewElement,
     pub selected_attribute: PreviewAttribute,
     pub config_manager: crate::config::ConfigManager,
@@ -51,6 +53,12 @@ pub struct App {
     pub undo_stack: Vec<(PreviewElement, PreviewAttribute, crate::theme::RgbColor)>,
     // Feature 5: rename/delete
     pub loader_action_index: usize,
+    // Fuzzy field search ( / )
+    pub field_search_query: String,
+    pub field_search_index: usize,
+    // Selection flash — when set, suppress highlight on alternating 100ms ticks
+    pub flash_start: Option<Instant>,
+    pub flash_ticks: u8,
     // Self-update
     pub update_status: UpdateStatus,
     pub update_rx: Option<std::sync::mpsc::Receiver<UpdateMsg>>,
@@ -67,6 +75,7 @@ pub enum InputMode {
     ThemeLoadRename,
     ThemeLoadDeleteConfirm,
     UpdateRestartConfirm,
+    FieldSearch,
     Help,
 }
 
@@ -103,6 +112,45 @@ impl PreviewAttribute {
     }
 }
 
+/// Logical grouping of Zellij preview elements for the two-tier menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PreviewGroup {
+    TabBar,
+    Panes,
+    Content,
+    Status,
+}
+
+impl PreviewGroup {
+    pub fn all() -> &'static [PreviewGroup; 4] {
+        use PreviewGroup::*;
+        &[TabBar, Panes, Content, Status]
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::TabBar => "Tab Bar",
+            Self::Panes => "Panes",
+            Self::Content => "Content",
+            Self::Status => "Status",
+        }
+    }
+
+    pub fn fields(&self) -> &'static [PreviewElement] {
+        use PreviewElement::*;
+        match self {
+            Self::TabBar => &[TabSelected, TabUnselected1, TabUnselected2],
+            Self::Panes => &[PaneSelected, TextSelected, PaneUnselected, PaneHighlight],
+            Self::Content => &[TableTitle, TableCellSelected, TableCellUnselected, ListSelected, ListUnselected],
+            Self::Status => &[ExitSuccess, ExitError, StatusBar],
+        }
+    }
+
+    pub fn index(&self) -> usize {
+        Self::all().iter().position(|g| g == self).unwrap_or(0)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PreviewElement {
     // Tab bar
@@ -127,6 +175,37 @@ pub enum PreviewElement {
 }
 
 impl PreviewElement {
+    pub fn all() -> &'static [PreviewElement] {
+        use PreviewElement::*;
+        &[
+            TabSelected,
+            TabUnselected1,
+            TabUnselected2,
+            PaneSelected,
+            TextSelected,
+            PaneUnselected,
+            PaneHighlight,
+            TableTitle,
+            TableCellSelected,
+            TableCellUnselected,
+            ListSelected,
+            ListUnselected,
+            ExitSuccess,
+            ExitError,
+            StatusBar,
+        ]
+    }
+
+    pub fn group(&self) -> PreviewGroup {
+        use PreviewElement::*;
+        match self {
+            TabSelected | TabUnselected1 | TabUnselected2 => PreviewGroup::TabBar,
+            PaneSelected | TextSelected | PaneUnselected | PaneHighlight => PreviewGroup::Panes,
+            TableTitle | TableCellSelected | TableCellUnselected | ListSelected | ListUnselected => PreviewGroup::Content,
+            ExitSuccess | ExitError | StatusBar => PreviewGroup::Status,
+        }
+    }
+
     pub fn is_frame(&self) -> bool {
         matches!(self, Self::PaneSelected | Self::PaneUnselected | Self::PaneHighlight)
     }
@@ -168,89 +247,6 @@ impl PreviewElement {
             Self::ExitError => "Exit (Error)",
         }
     }
-
-    /// Full vertical order (top → bottom of screen)
-    fn vertical_order() -> &'static [PreviewElement] {
-        use PreviewElement::*;
-        &[
-            TabSelected,
-            TabUnselected1,
-            TabUnselected2,
-            PaneSelected,
-            TextSelected,
-            PaneUnselected,
-            PaneHighlight,
-            TableTitle,
-            TableCellSelected,
-            TableCellUnselected,
-            ListSelected,
-            ListUnselected,
-            ExitSuccess,
-            ExitError,
-            StatusBar,
-        ]
-    }
-
-    fn vertical_index(&self) -> usize {
-        Self::vertical_order()
-            .iter()
-            .position(|e| e == self)
-            .unwrap_or(0)
-    }
-
-    pub fn move_up(&mut self) {
-        let order = Self::vertical_order();
-        let idx = self.vertical_index();
-        let next = if idx == 0 { order.len() - 1 } else { idx - 1 };
-        *self = order[next];
-    }
-
-    pub fn move_down(&mut self) {
-        let order = Self::vertical_order();
-        let idx = self.vertical_index();
-        let next = (idx + 1) % order.len();
-        *self = order[next];
-    }
-
-    pub fn move_left(&mut self) {
-        use PreviewElement::*;
-        *self = match self {
-            // Tabs: move left among tabs
-            TabSelected => TabSelected,
-            TabUnselected1 => TabSelected,
-            TabUnselected2 => TabUnselected1,
-            // Status bar stays
-            StatusBar => StatusBar,
-            // Left panes stay in left column
-            PaneSelected => PaneSelected,
-            TextSelected => TextSelected,
-            PaneUnselected => PaneUnselected,
-            // Right pane contents → jump to left column
-            PaneHighlight => PaneSelected,
-            TableTitle | TableCellSelected | TableCellUnselected | ListSelected
-            | ListUnselected | ExitSuccess => PaneSelected,
-            ExitError => PaneSelected,
-        };
-    }
-
-    pub fn move_right(&mut self) {
-        use PreviewElement::*;
-        *self = match self {
-            // Tabs: move right among tabs
-            TabSelected => TabUnselected1,
-            TabUnselected1 => TabUnselected2,
-            TabUnselected2 => TabUnselected2,
-            // Status bar stays
-            StatusBar => StatusBar,
-            // Left panes → right pane
-            PaneSelected | TextSelected | PaneUnselected => PaneHighlight,
-            // Right column stays
-            PaneHighlight | TableTitle | TableCellSelected | TableCellUnselected | ListSelected
-            | ListUnselected => *self,
-            ExitSuccess => ExitError,
-            ExitError => ExitError,
-        };
-    }
 }
 
 fn theme_swatches(theme: &crate::theme::Theme) -> [crate::theme::RgbColor; 4] {
@@ -278,9 +274,11 @@ fn load_entry(entry: &ThemeEntry, config_manager: &crate::config::ConfigManager)
 
 impl Default for App {
     fn default() -> Self {
+        let first_element = PreviewElement::TabSelected;
         Self {
             theme: Theme::default(),
-            selected_element: PreviewElement::TabSelected,
+            selected_group: first_element.group(),
+            selected_element: first_element,
             selected_attribute: PreviewAttribute::Base,
             config_manager: crate::config::ConfigManager::new(),
             message: None,
@@ -301,6 +299,10 @@ impl Default for App {
             clipboard_color: None,
             undo_stack: Vec::new(),
             loader_action_index: 0,
+            field_search_query: String::new(),
+            field_search_index: 0,
+            flash_start: None,
+            flash_ticks: 0,
             update_status: UpdateStatus::Idle,
             update_rx: None,
             restart_after_exit: false,
@@ -313,6 +315,139 @@ impl App {
         let mut app = Self::default();
         app.sync_theme_name_input();
         app
+    }
+
+    // ── Group / field navigation ─────────────────────────────────────────
+
+    /// ← / → — switch group
+    pub fn prev_group(&mut self) {
+        let groups = PreviewGroup::all();
+        let idx = self.selected_group.index();
+        let next = if idx == 0 { groups.len() - 1 } else { idx - 1 };
+        self.select_group(groups[next]);
+    }
+
+    pub fn next_group(&mut self) {
+        let groups = PreviewGroup::all();
+        let idx = self.selected_group.index();
+        self.select_group(groups[(idx + 1) % groups.len()]);
+    }
+
+    /// Number keys 1–4 → jump straight to that group.
+    pub fn select_group_index(&mut self, n: usize) {
+        if let Some(g) = PreviewGroup::all().get(n) {
+            self.select_group(*g);
+        }
+    }
+
+    pub fn select_group(&mut self, group: PreviewGroup) {
+        self.selected_group = group;
+        self.selected_element = group.fields()[0];
+        self.flash_selection();
+    }
+
+    /// ↑ / ↓ — previous/next field within the current group (wraps).
+    pub fn prev_field_in_group(&mut self) {
+        let fields = self.selected_group.fields();
+        let idx = fields.iter().position(|f| *f == self.selected_element).unwrap_or(0);
+        let next = if idx == 0 { fields.len() - 1 } else { idx - 1 };
+        self.selected_element = fields[next];
+        if self.selected_element.is_frame() {
+            self.selected_attribute = PreviewAttribute::Base;
+        }
+        self.flash_selection();
+    }
+
+    pub fn next_field_in_group(&mut self) {
+        let fields = self.selected_group.fields();
+        let idx = fields.iter().position(|f| *f == self.selected_element).unwrap_or(0);
+        self.selected_element = fields[(idx + 1) % fields.len()];
+        if self.selected_element.is_frame() {
+            self.selected_attribute = PreviewAttribute::Base;
+        }
+        self.flash_selection();
+    }
+
+    // ── Selection flash ──────────────────────────────────────────────────
+
+    /// Start or restart the flash — 3 full on-off cycles (6 ticks).
+    fn flash_selection(&mut self) {
+        self.flash_start = Some(Instant::now());
+        self.flash_ticks = 6;
+    }
+
+    /// Returns true when the selection highlight should be hidden (off-phase of flash).
+    pub fn is_flashing_off(&self) -> bool {
+        let Some(start) = self.flash_start else {
+            return false;
+        };
+        let elapsed = start.elapsed().as_millis();
+        let tick = (elapsed / 100) as u8;
+        if tick >= self.flash_ticks {
+            return false; // flash complete, show highlight normally
+        }
+        // Flash pattern: tick 0=off, 1=on, 2=off, 3=on
+        tick % 2 == 0
+    }
+
+    // ── Fuzzy field search ( / ) ─────────────────────────────────────────
+
+    pub fn open_field_search(&mut self) {
+        self.field_search_query.clear();
+        self.field_search_index = 0;
+        self.input_mode = InputMode::FieldSearch;
+        self.message = None;
+    }
+
+    /// Fields whose label fuzzily matches the query (all when empty).
+    pub fn filtered_fields(&self) -> Vec<PreviewElement> {
+        let q = self.field_search_query.to_ascii_lowercase();
+        PreviewElement::all()
+            .iter()
+            .copied()
+            .filter(|f| {
+                if q.is_empty() {
+                    return true;
+                }
+                let hay = f.label().to_ascii_lowercase();
+                hay.contains(&q)
+            })
+            .collect()
+    }
+
+    pub fn push_field_search_char(&mut self, c: char) {
+        self.field_search_query.push(c);
+        self.field_search_index = 0;
+    }
+
+    pub fn pop_field_search_char(&mut self) {
+        self.field_search_query.pop();
+        self.field_search_index = 0;
+    }
+
+    pub fn move_field_search(&mut self, delta: i32) {
+        let len = self.filtered_fields().len();
+        if len == 0 {
+            self.field_search_index = 0;
+            return;
+        }
+        let cur = self.field_search_index.min(len - 1) as i32;
+        self.field_search_index = (cur + delta).rem_euclid(len as i32) as usize;
+    }
+
+    pub fn commit_field_search(&mut self) {
+        let matches = self.filtered_fields();
+        if let Some(f) = matches.get(self.field_search_index).copied() {
+            self.selected_element = f;
+            self.selected_group = f.group();
+            self.message = Some(format!("→ {}", f.label()));
+        }
+        self.input_mode = InputMode::Preview;
+    }
+
+    pub fn cancel_field_search(&mut self) {
+        self.input_mode = InputMode::Preview;
+        self.message = None;
     }
 
     pub fn save_theme(&mut self) {

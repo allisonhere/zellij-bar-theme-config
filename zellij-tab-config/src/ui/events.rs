@@ -11,24 +11,28 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
             // Any navigation clears the save message
             match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => return true,
-                KeyCode::Up => {
-                    app.selected_element.move_up();
-                    if app.selected_element.is_frame() { app.selected_attribute = crate::ui::state::PreviewAttribute::Base; }
-                    app.message = None;
-                }
-                KeyCode::Down => {
-                    app.selected_element.move_down();
-                    if app.selected_element.is_frame() { app.selected_attribute = crate::ui::state::PreviewAttribute::Base; }
-                    app.message = None;
-                }
                 KeyCode::Left => {
-                    app.selected_element.move_left();
-                    if app.selected_element.is_frame() { app.selected_attribute = crate::ui::state::PreviewAttribute::Base; }
+                    app.prev_group();
                     app.message = None;
                 }
                 KeyCode::Right => {
-                    app.selected_element.move_right();
-                    if app.selected_element.is_frame() { app.selected_attribute = crate::ui::state::PreviewAttribute::Base; }
+                    app.next_group();
+                    app.message = None;
+                }
+                KeyCode::Up => {
+                    app.prev_field_in_group();
+                    app.message = None;
+                }
+                KeyCode::Down => {
+                    app.next_field_in_group();
+                    app.message = None;
+                }
+                KeyCode::Char('j') => {
+                    app.next_field_in_group();
+                    app.message = None;
+                }
+                KeyCode::Char('k') => {
+                    app.prev_field_in_group();
                     app.message = None;
                 }
                 KeyCode::Tab => {
@@ -36,6 +40,25 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
                     if !app.selected_element.is_frame() {
                         app.selected_attribute.cycle();
                     }
+                }
+                KeyCode::Char('1') => {
+                    app.select_group_index(0);
+                    app.message = None;
+                }
+                KeyCode::Char('2') => {
+                    app.select_group_index(1);
+                    app.message = None;
+                }
+                KeyCode::Char('3') => {
+                    app.select_group_index(2);
+                    app.message = None;
+                }
+                KeyCode::Char('4') => {
+                    app.select_group_index(3);
+                    app.message = None;
+                }
+                KeyCode::Char('/') => {
+                    app.open_field_search();
                 }
                 KeyCode::Char('c') => {
                     app.message = None;
@@ -67,14 +90,6 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
                 KeyCode::Enter => {
                     app.message = None;
                     app.open_color_picker();
-                }
-                KeyCode::Char('j') => {
-                    app.selected_element.move_down();
-                    app.message = None;
-                }
-                KeyCode::Char('k') => {
-                    app.selected_element.move_up();
-                    app.message = None;
                 }
                 KeyCode::Char('y') => {
                     app.message = None;
@@ -370,6 +385,27 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
                 }
             }
         }
+        InputMode::FieldSearch => match key.code {
+            KeyCode::Esc => {
+                app.cancel_field_search();
+            }
+            KeyCode::Enter => {
+                app.commit_field_search();
+            }
+            KeyCode::Backspace => {
+                app.pop_field_search_char();
+            }
+            KeyCode::Up => {
+                app.move_field_search(-1);
+            }
+            KeyCode::Down => {
+                app.move_field_search(1);
+            }
+            KeyCode::Char(c) => {
+                app.push_field_search_char(c);
+            }
+            _ => {}
+        },
         InputMode::Help => match key.code {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?') => {
                 app.input_mode = InputMode::Preview;
