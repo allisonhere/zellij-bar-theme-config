@@ -6,14 +6,20 @@ INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 LATEST_RELEASE="https://github.com/allisonhere/zellit/releases/latest/download"
 
 # ── Colors ────────────────────────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-DIM='\033[2m'
-BOLD='\033[1m'
-RESET='\033[0m'
+# Use printf so the variables hold real ESC bytes; POSIX `sh` echo does not
+# interpret backslash escapes, so embedding them as literals would print garbage.
+if [ -t 1 ]; then
+    RED=$(printf '\033[0;31m')
+    GREEN=$(printf '\033[0;32m')
+    YELLOW=$(printf '\033[1;33m')
+    CYAN=$(printf '\033[0;36m')
+    MAGENTA=$(printf '\033[0;35m')
+    DIM=$(printf '\033[2m')
+    BOLD=$(printf '\033[1m')
+    RESET=$(printf '\033[0m')
+else
+    RED='' GREEN='' YELLOW='' CYAN='' MAGENTA='' DIM='' BOLD='' RESET=''
+fi
 
 OS="$(uname -s)"
 ARCH="$(uname -m)"
@@ -30,7 +36,7 @@ esac
 echo ""
 echo "  ${CYAN}╔══════════════════════════════════════════╗${RESET}"
 echo "  ${CYAN}║${RESET}  ${MAGENTA}${BOLD}zellij-tab-config${RESET} is now called ${GREEN}${BOLD}zellit${RESET}  ${CYAN}║${RESET}"
-echo "  ${CYAN}║${RESET}  ${DIM}github.com/allisonhere/zellit${RESET}             ${CYAN}║${RESET}"
+echo "  ${CYAN}║${RESET}  ${DIM}github.com/allisonhere/zellit${RESET}           ${CYAN}║${RESET}"
 echo "  ${CYAN}╚══════════════════════════════════════════╝${RESET}"
 echo ""
 if [ -t 0 ]; then
