@@ -15,15 +15,24 @@ case "${OS}_${ARCH}" in
     *)             PREBUILT="" ;;
 esac
 
+# ── Colors ────────────────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+DIM='\033[2m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
 echo ""
-echo "  ╔══════════════════════════════════════════╗"
-echo "  ║  zellij-tab-config is now called zellit  ║"
-echo "  ║  The binary has been renamed to: zellit  ║"
-echo "  ║  https://github.com/allisonhere/zellit  ║"
-echo "  ╚══════════════════════════════════════════╝"
+echo "  ${CYAN}╔══════════════════════════════════════════╗${RESET}"
+echo "  ${CYAN}║${RESET}  ${MAGENTA}${BOLD}zellij-tab-config${RESET} is now called ${GREEN}${BOLD}zellit${RESET}  ${CYAN}║${RESET}"
+echo "  ${CYAN}║${RESET}  ${DIM}github.com/allisonhere/zellit${RESET}             ${CYAN}║${RESET}"
+echo "  ${CYAN}╚══════════════════════════════════════════╝${RESET}"
 echo ""
 if [ -t 0 ]; then
-    printf "  Press Enter to install zellit "
+    printf "  Press Enter to install ${GREEN}zellit${RESET} "
     read -r _
     echo ""
 fi
@@ -88,6 +97,16 @@ else
 
     cp "$TMP/repo/target/release/$BIN" "$INSTALL_DIR/$BIN"
     chmod +x "$INSTALL_DIR/$BIN"
+fi
+
+# ── Old binary cleanup ────────────────────────────────────────────────────────
+OLD="$INSTALL_DIR/zellij-tab-config"
+if [ -f "$OLD" ]; then
+    echo ""
+    printf "  ${YELLOW}Old binary found:${RESET} %s\n" "$OLD"
+    printf "  ${DIM}Remove it to keep your system clean? [y/N]${RESET} "
+    read -r answer
+    [ "$answer" = "y" ] || [ "$answer" = "Y" ] && rm -f "$OLD" && echo "  ${GREEN}Removed.${RESET}"
 fi
 
 # ── Done ─────────────────────────────────────────────────────────────────────
