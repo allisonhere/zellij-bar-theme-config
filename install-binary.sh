@@ -39,9 +39,11 @@ echo "  ${CYAN}║${RESET}  ${MAGENTA}${BOLD}zellij-tab-config${RESET} is now ca
 echo "  ${CYAN}║${RESET}  ${DIM}github.com/allisonhere/zellit${RESET}           ${CYAN}║${RESET}"
 echo "  ${CYAN}╚══════════════════════════════════════════╝${RESET}"
 echo ""
-if [ -t 0 ]; then
+if [ -e /dev/tty ]; then
+    # Read from the terminal directly so the prompt pauses even when the
+    # script is run as `curl -fsSL ... | sh` (stdin is the pipe, not the tty).
     printf "  Press Enter to install ${GREEN}zellit${RESET} "
-    read -r _
+    read -r _ < /dev/tty
     echo ""
 fi
 
