@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
 set -e
 
-REPO="https://github.com/allisonhere/zellij-bar-theme-config"
-BIN="zellij-tab-config"
+REPO="https://github.com/allisonhere/zellit"
+BIN="zellit"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 echo "==> Installing $BIN (from source)"
@@ -23,10 +23,10 @@ echo "==> Cloning $REPO"
 git clone --depth 1 "$REPO" "$TMP/repo"
 
 echo "==> Building (release)"
-cargo build --release --manifest-path "$TMP/repo/zellij-tab-config/Cargo.toml"
+cargo build --release --manifest-path "$TMP/repo/Cargo.toml"
 
 mkdir -p "$INSTALL_DIR"
-cp "$TMP/repo/zellij-tab-config/target/release/$BIN" "$INSTALL_DIR/$BIN"
+cp "$TMP/repo/target/release/$BIN" "$INSTALL_DIR/$BIN"
 chmod +x "$INSTALL_DIR/$BIN"
 
 echo ""

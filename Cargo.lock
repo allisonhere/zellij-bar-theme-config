@@ -2373,7 +2373,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "zellij_tab_config"
+name = "zellit"
 version = "0.6.0"
 dependencies = [
  "crossterm",

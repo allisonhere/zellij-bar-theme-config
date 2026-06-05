@@ -1,5 +1,5 @@
 [package]
-name = "zellij_tab_config"
+name = "zellit"
 version = "0.6.0"
 license = "MIT"
 edition = "2021"
@@ -16,5 +16,5 @@ ureq = { version = "2", features = ["json"] }
 palette = { version = "0.7", default-features = false, features = ["std"] }
 
 [[bin]]
-name = "zellij-tab-config"
+name = "zellit"
 path = "src/main.rs"

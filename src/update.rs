@@ -1,7 +1,7 @@
 use std::io::Read;
 use std::time::Duration;
 
-const REPO: &str = "allisonhere/zellij-bar-theme-config";
+const REPO: &str = "allisonhere/zellit";
 const CURRENT: &str = env!("CARGO_PKG_VERSION");
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const IO_TIMEOUT: Duration = Duration::from_secs(30);
@@ -22,7 +22,7 @@ fn parse_ver(s: &str) -> Option<(u32, u32, u32)> {
 
 fn release_asset_name() -> Option<&'static str> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("linux", "x86_64") => Some("zellij-tab-config-linux-x86_64"),
+        ("linux", "x86_64") => Some("zellit-linux-x86_64"),
         _ => None,
     }
 }
@@ -45,7 +45,7 @@ pub fn check_version() -> Result<Option<String>, String> {
     let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
     let resp: serde_json::Value = http_agent()
         .get(&url)
-        .set("User-Agent", "zellij-tab-config")
+        .set("User-Agent", "zellit")
         .call()
         .map_err(|e| e.to_string())?
         .into_json()
@@ -70,7 +70,7 @@ pub fn download_and_replace(tag: &str) -> Result<(), String> {
 
     let resp = http_agent()
         .get(&url)
-        .set("User-Agent", "zellij-tab-config")
+        .set("User-Agent", "zellit")
         .call()
         .map_err(|e| e.to_string())?;
 
@@ -111,7 +111,7 @@ mod tests {
     fn release_asset_matches_supported_targets() {
         match (std::env::consts::OS, std::env::consts::ARCH) {
             ("linux", "x86_64") => {
-                assert_eq!(release_asset_name(), Some("zellij-tab-config-linux-x86_64"));
+                assert_eq!(release_asset_name(), Some("zellit-linux-x86_64"));
             }
             _ => assert_eq!(release_asset_name(), None),
         }

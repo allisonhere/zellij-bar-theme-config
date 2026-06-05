@@ -1,10 +1,10 @@
 #!/usr/bin/env sh
 set -e
 
-REPO="https://github.com/allisonhere/zellij-bar-theme-config"
-BIN="zellij-tab-config"
+REPO="https://github.com/allisonhere/zellit"
+BIN="zellit"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
-LATEST_RELEASE="https://github.com/allisonhere/zellij-bar-theme-config/releases/latest/download"
+LATEST_RELEASE="https://github.com/allisonhere/zellit/releases/latest/download"
 
 # ── Detect platform ──────────────────────────────────────────────────────────
 OS="$(uname -s)"
@@ -71,9 +71,9 @@ else
     git clone --depth 1 "$REPO" "$TMP/repo"
 
     echo "==> Building (release)"
-    cargo build --release --manifest-path "$TMP/repo/zellij-tab-config/Cargo.toml"
+    cargo build --release --manifest-path "$TMP/repo/Cargo.toml"
 
-    cp "$TMP/repo/zellij-tab-config/target/release/$BIN" "$INSTALL_DIR/$BIN"
+    cp "$TMP/repo/target/release/$BIN" "$INSTALL_DIR/$BIN"
     chmod +x "$INSTALL_DIR/$BIN"
 fi
 

@@ -17,7 +17,7 @@ RESET='\033[0m'
 header() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════╗${RESET}"
-    echo -e "${CYAN}║${RESET}  ${MAGENTA}${BOLD}⚡ zellij-bar-theme-config  deploy${RESET}               ${CYAN}║${RESET}"
+    echo -e "${CYAN}║${RESET}  ${MAGENTA}${BOLD}⚡ zellit  deploy${RESET}               ${CYAN}║${RESET}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════╝${RESET}"
     echo ""
 }
@@ -49,7 +49,7 @@ bump_version() {
 header
 
 # Check we're in the right place
-[ -f "zellij-tab-config/Cargo.toml" ] || die "Run this from the repo root"
+[ -f "Cargo.toml" ] || die "Run this from the repo root"
 
 # ── Git status ────────────────────────────────────────────────────────────────
 step "Checking working tree"
@@ -117,7 +117,7 @@ esac
 
 # ── Bump Cargo.toml version to match tag ─────────────────────────────────────
 SEMVER="${NEW_TAG#v}"
-CARGO_TOML="zellij-tab-config/Cargo.toml"
+CARGO_TOML="Cargo.toml"
 sed -i "s/^version = \".*\"/version = \"${SEMVER}\"/" "$CARGO_TOML"
 git add "$CARGO_TOML"
 git commit -m "chore: bump version to ${NEW_TAG}"

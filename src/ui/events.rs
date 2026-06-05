@@ -336,7 +336,7 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
                     KeyCode::Char('a') => {
                         app.apply_selected_theme();
                     }
-                    KeyCode::Char('d') => {
+                    KeyCode::Char('b') => {
                         app.set_theme_filter(crate::ui::state::ThemeFilter::Builtin);
                     }
                     KeyCode::Char('s') => {
@@ -345,7 +345,7 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
                     KeyCode::Char('r') => {
                         app.begin_rename_selected_theme();
                     }
-                    KeyCode::Char('x') => {
+                    KeyCode::Char('d') => {
                         app.begin_delete_selected_theme();
                     }
                     KeyCode::Up => {

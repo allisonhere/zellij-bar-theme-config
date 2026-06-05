@@ -493,8 +493,7 @@ impl App {
         let bar_fg = get_fg(ThemeComponentType::TextUnselected, t);
 
         let is_tab_sel = self.is_element_active(PreviewElement::TabSelected);
-        let is_tab_u1 = self.is_element_active(PreviewElement::TabUnselected1);
-        let is_tab_u2 = self.is_element_active(PreviewElement::TabUnselected2);
+        let is_tab_u = self.is_element_active(PreviewElement::TabUnselected);
 
         let layout_label = " layout: default ";
 
@@ -521,7 +520,7 @@ impl App {
             Style::new()
                 .fg(unsel_fg)
                 .bg(unsel_bg)
-                .add_modifier(Modifier::BOLD | selection_modifier(is_tab_u1)),
+                .add_modifier(Modifier::BOLD | selection_modifier(is_tab_u)),
         ));
         spans.push(Span::styled(" ", Style::new().bg(bar_bg)));
 
@@ -530,7 +529,7 @@ impl App {
             Style::new()
                 .fg(unsel_fg)
                 .bg(unsel_bg)
-                .add_modifier(Modifier::BOLD | selection_modifier(is_tab_u2)),
+                .add_modifier(Modifier::BOLD | selection_modifier(is_tab_u)),
         ));
         spans.push(Span::styled(" ", Style::new().bg(bar_bg)));
 
@@ -931,12 +930,12 @@ impl App {
             ],
             InputMode::ThemeLoad => &[
                 ("↑↓",   "SELECT",  "SEL"),
-                ("d",    "DEFAULT", "DEF"),
+                ("b",    "BUILTIN", "BIN"),
                 ("s",    "SAVED",   "SVD"),
                 ("Enter","LOAD",    "LD"),
                 ("a",    "APPLY",   "AP"),
                 ("r",    "RENAME",  "RN"),
-                ("x",    "DELETE",  "DEL"),
+                ("d",    "DELETE",  "DEL"),
                 ("Esc",  "CANCEL",  "ESC"),
             ],
             InputMode::ThemeLoadRename => &[
@@ -1959,14 +1958,14 @@ impl App {
             Line::from(vec![
                 Span::styled(" repo:    ", Style::new().fg(MUTED)),
                 Span::styled(
-                    "github.com/allisonhere/zellij-bar-theme-config",
+                    "github.com/allisonhere/zellit",
                     Style::new().fg(LINK),
                 ),
             ]),
             Line::from(vec![
                 Span::styled(" issues:  ", Style::new().fg(MUTED)),
                 Span::styled(
-                    "github.com/allisonhere/zellij-bar-theme-config/issues",
+                    "github.com/allisonhere/zellit/issues",
                     Style::new().fg(LINK),
                 ),
             ]),
@@ -2139,7 +2138,7 @@ impl App {
         };
 
         let mut filter_spans = filter_pill("A", "all", matches!(self.theme_filter, ThemeFilter::All));
-        filter_spans.extend(filter_pill("D", "built-in", matches!(self.theme_filter, ThemeFilter::Builtin)));
+        filter_spans.extend(filter_pill("B", "built-in", matches!(self.theme_filter, ThemeFilter::Builtin)));
         filter_spans.extend(filter_pill("S", "saved", matches!(self.theme_filter, ThemeFilter::Saved)));
         let filter_rect = Rect { x: inner.x, y: inner.y + 1, width: inner.width, height: 1 };
         frame.render_widget(

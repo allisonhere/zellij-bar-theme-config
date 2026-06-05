@@ -23,15 +23,19 @@ jobs:
         run: sudo apt-get install -y musl-tools
 
       - name: Build
-        run: cargo build --release --target x86_64-unknown-linux-musl --manifest-path zellij-tab-config/Cargo.toml
+        run: cargo build --release --target x86_64-unknown-linux-musl
 
-      - name: Rename binary
-        run: cp zellij-tab-config/target/x86_64-unknown-linux-musl/release/zellij-tab-config zellij-tab-config-linux-x86_64
+      - name: Rename binaries
+        run: |
+          cp target/x86_64-unknown-linux-musl/release/zellit zellit-linux-x86_64
+          cp target/x86_64-unknown-linux-musl/release/zellit zellij-tab-config-linux-x86_64
 
-      - name: Upload release binary
+      - name: Upload release binaries
         uses: softprops/action-gh-release@v2
         with:
-          files: zellij-tab-config-linux-x86_64
+          files: |
+            zellit-linux-x86_64
+            zellij-tab-config-linux-x86_64
           draft: false
           fail_on_unmatched_files: true
         env:

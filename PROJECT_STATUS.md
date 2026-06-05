@@ -5,7 +5,7 @@ A terminal UI application for configuring Zellij tab bar themes.
 ## Project Location
 
 ```
-/home/allie/Projects/zellij/zellij-tab-config/zellij-tab-config/
+/home/allie/projects/zellit/
 ```
 
 ## Files
@@ -88,7 +88,7 @@ Uses the other attribute's color as context (e.g., editing FG shows new color on
 ## Running
 
 ```bash
-cd /home/allie/Projects/zellij/zellij-tab-config/zellij-tab-config
+cd /home/allie/projects/zellit
 cargo run
 ```
 

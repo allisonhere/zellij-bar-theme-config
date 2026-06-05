@@ -1,9 +1,9 @@
 #!/usr/bin/env sh
 set -e
 
-BIN="zellij-tab-config"
+BIN="zellit"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
-LATEST_RELEASE="https://github.com/allisonhere/zellij-bar-theme-config/releases/latest/download"
+LATEST_RELEASE="https://github.com/allisonhere/zellit/releases/latest/download"
 
 OS="$(uname -s)"
 ARCH="$(uname -m)"

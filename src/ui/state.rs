@@ -151,7 +151,7 @@ impl PreviewGroup {
     pub fn fields(&self) -> &'static [PreviewElement] {
         use PreviewElement::*;
         match self {
-            Self::TabBar => &[TabSelected, TabUnselected1, TabUnselected2],
+            Self::TabBar => &[TabSelected, TabUnselected],
             Self::Panes => &[PaneSelected, TextSelected, PaneUnselected, PaneHighlight],
             Self::Content => &[TableTitle, TableCellSelected, TableCellUnselected, ListSelected, ListUnselected],
             Self::Status => &[ExitSuccess, ExitError, StatusBar],
@@ -163,8 +163,7 @@ impl PreviewGroup {
 pub enum PreviewElement {
     // Tab bar
     TabSelected,
-    TabUnselected1,
-    TabUnselected2,
+    TabUnselected,
     // Status bar
     StatusBar,
     // Left panes
@@ -187,8 +186,7 @@ impl PreviewElement {
         use PreviewElement::*;
         &[
             TabSelected,
-            TabUnselected1,
-            TabUnselected2,
+            TabUnselected,
             PaneSelected,
             TextSelected,
             PaneUnselected,
@@ -207,7 +205,7 @@ impl PreviewElement {
     pub fn group(&self) -> PreviewGroup {
         use PreviewElement::*;
         match self {
-            TabSelected | TabUnselected1 | TabUnselected2 => PreviewGroup::TabBar,
+            TabSelected | TabUnselected => PreviewGroup::TabBar,
             PaneSelected | TextSelected | PaneUnselected | PaneHighlight => PreviewGroup::Panes,
             TableTitle | TableCellSelected | TableCellUnselected | ListSelected | ListUnselected => PreviewGroup::Content,
             ExitSuccess | ExitError | StatusBar => PreviewGroup::Status,
@@ -231,7 +229,7 @@ impl PreviewElement {
     pub fn component_type(&self) -> ThemeComponentType {
         match self {
             Self::TabSelected => ThemeComponentType::RibbonSelected,
-            Self::TabUnselected1 | Self::TabUnselected2 => ThemeComponentType::RibbonUnselected,
+            Self::TabUnselected => ThemeComponentType::RibbonUnselected,
             Self::StatusBar => ThemeComponentType::TextUnselected,
             Self::PaneSelected => ThemeComponentType::FrameSelected,
             Self::TextSelected => ThemeComponentType::TextSelected,
@@ -250,7 +248,7 @@ impl PreviewElement {
     pub fn label(&self) -> &'static str {
         match self {
             Self::TabSelected => "Tab (Selected)",
-            Self::TabUnselected1 | Self::TabUnselected2 => "Tab (Unselected)",
+            Self::TabUnselected => "Tab (Unselected)",
             Self::StatusBar => "Status Bar",
             Self::PaneSelected => "Pane (Selected)",
             Self::TextSelected => "Text (Selected)",
