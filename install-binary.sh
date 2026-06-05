@@ -64,9 +64,23 @@ OLD="$INSTALL_DIR/zellij-tab-config"
 if [ -f "$OLD" ]; then
     echo ""
     printf "  ${YELLOW}Old binary found:${RESET} %s\n" "$OLD"
-    printf "  ${DIM}Remove it to keep your system clean? [y/N]${RESET} "
-    read -r answer
-    [ "$answer" = "y" ] || [ "$answer" = "Y" ] && rm -f "$OLD" && echo "  ${GREEN}Removed.${RESET}"
+    if [ -e /dev/tty ]; then
+        # Read from the terminal directly so the prompt stops and waits even
+        # when the script is run as `curl -fsSL ... | sh` (stdin is the pipe).
+        printf "  ${DIM}Remove it to keep your system clean? [y/N]${RESET} "
+        read -r answer < /dev/tty
+        case "$answer" in
+            [yY] | [yY][eE][sS])
+                rm -f "$OLD"
+                printf "  ${GREEN}Removed.${RESET}\n"
+                ;;
+            *)
+                printf "  ${DIM}Kept old binary.${RESET}\n"
+                ;;
+        esac
+    else
+        printf "  ${DIM}No terminal available; left old binary in place.${RESET}\n"
+    fi
 fi
 
 echo ""
