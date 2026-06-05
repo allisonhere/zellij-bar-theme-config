@@ -17,6 +17,19 @@ case "${OS}_${ARCH}" in
         ;;
 esac
 
+echo ""
+echo "  ╔══════════════════════════════════════════╗"
+echo "  ║  zellij-tab-config is now called zellit  ║"
+echo "  ║  The binary has been renamed to: zellit  ║"
+echo "  ║  https://github.com/allisonhere/zellit  ║"
+echo "  ╚══════════════════════════════════════════╝"
+echo ""
+if [ -t 0 ]; then
+    printf "  Press Enter to install zellit "
+    read -r _
+    echo ""
+fi
+
 echo "==> Installing $BIN (prebuilt)"
 mkdir -p "$INSTALL_DIR"
 
