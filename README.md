@@ -2,7 +2,7 @@
 
 A terminal UI for creating, editing, and applying [Zellij](https://zellij.dev) themes. Live preview of your changes across all UI components — tab bar, panes, status bar, tables, lists — before writing anything to disk.
 
-![zellij-bar-theme-config screenshot](pic.png)
+![zellij-bar-theme-config screenshot](screen.png)
 
 > **New — sidebar navigation.** The element selector is now a single **sidebar tree** on the left, grouped by section (TabBar / Panes / Content / Status). Move through every element with `↑ ↓` (or `j` / `k`), press `1`–`4` to jump straight to a group, and `/` to fuzzy-search any element. The old two-tier group/field navigation (`← →` to switch groups, `↑ ↓` within a group) has been replaced. Press `A` for an About screen with project links.
 
