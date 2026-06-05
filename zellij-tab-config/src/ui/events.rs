@@ -11,28 +11,12 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
             // Any navigation clears the save message
             match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => return true,
-                KeyCode::Left => {
-                    app.prev_group();
+                KeyCode::Up | KeyCode::Char('k') => {
+                    app.prev_element();
                     app.message = None;
                 }
-                KeyCode::Right => {
-                    app.next_group();
-                    app.message = None;
-                }
-                KeyCode::Up => {
-                    app.prev_field_in_group();
-                    app.message = None;
-                }
-                KeyCode::Down => {
-                    app.next_field_in_group();
-                    app.message = None;
-                }
-                KeyCode::Char('j') => {
-                    app.next_field_in_group();
-                    app.message = None;
-                }
-                KeyCode::Char('k') => {
-                    app.prev_field_in_group();
+                KeyCode::Down | KeyCode::Char('j') => {
+                    app.next_element();
                     app.message = None;
                 }
                 KeyCode::Tab => {
@@ -86,6 +70,10 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
                     app.message = None;
                     app.help_scroll = 0;
                     app.input_mode = InputMode::Help;
+                }
+                KeyCode::Char('A') => {
+                    app.message = None;
+                    app.input_mode = InputMode::About;
                 }
                 KeyCode::Enter => {
                     app.message = None;
@@ -430,6 +418,9 @@ pub fn process_key(app: &mut App, key: crossterm::event::KeyEvent) -> bool {
             }
             _ => {}
         },
+        InputMode::About => {
+            app.input_mode = InputMode::Preview;
+        }
         InputMode::ThemeLoadRename => match key.code {
             KeyCode::Esc => {
                 app.input_mode = InputMode::ThemeLoad;
@@ -477,7 +468,11 @@ pub fn process_mouse(app: &mut App, mouse: MouseEvent) {
     let Ok((w, h)) = crossterm::terminal::size() else {
         return;
     };
-    let rects = picker_layout(ratatui::layout::Rect::new(0, 0, w, h), app.color_editor.mode);
+    let rects = picker_layout(
+        ratatui::layout::Rect::new(0, 0, w, h),
+        app.color_editor.mode,
+        app.selected_element.preferred_picker_anchor(),
+    );
     let point_focus = app.color_editor.focus_for_point(&rects, mouse.column, mouse.row);
 
     let update_drag = |app: &mut App,

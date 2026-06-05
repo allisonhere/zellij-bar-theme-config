@@ -4,6 +4,8 @@ A terminal UI for creating, editing, and applying [Zellij](https://zellij.dev) t
 
 ![zellij-bar-theme-config screenshot](screen.png)
 
+> **New — sidebar navigation.** The element selector is now a single **sidebar tree** on the left, grouped by section (TabBar / Panes / Content / Status). Move through every element with `↑ ↓` (or `j` / `k`), press `1`–`4` to jump straight to a group, and `/` to fuzzy-search any element. The old two-tier group/field navigation (`← →` to switch groups, `↑ ↓` within a group) has been replaced. Press `A` for an About screen with project links.
+
 ## Features
 
 - **Live preview** — see every color change reflected instantly across a full Zellij-layout mockup
@@ -61,7 +63,9 @@ The app opens a full-terminal preview of a Zellij layout. Use the keyboard to na
 
 | Key | Action |
 |-----|--------|
-| `↑ ↓ ← →` / `j k` | Navigate between preview elements |
+| `↑ ↓` / `j k` | Move through the sidebar tree of preview elements |
+| `1`–`4` | Jump to a group (TabBar / Panes / Content / Status) |
+| `/` | Fuzzy-search and jump to any element |
 | `Tab` | Toggle FG / BG (not available on pane borders) |
 | `c` / `Enter` | Open color picker for the selected color |
 | `y` | Yank (copy) current color |
@@ -72,6 +76,7 @@ The app opens a full-terminal preview of a Zellij layout. Use the keyboard to na
 | `a` | Apply current theme to Zellij |
 | `U` | Install the latest released binary when an update is available on Linux x86_64 |
 | `?` | Toggle help overlay |
+| `A` | About — project credits and links |
 | `q` / `Esc` | Quit |
 
 **Color picker:**

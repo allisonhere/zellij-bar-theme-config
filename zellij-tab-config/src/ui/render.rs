@@ -97,7 +97,7 @@ mod tests {
 
         let tab = find_text(buffer, "1:terminal").expect("selected tab should be rendered");
         assert_eq!(buffer[tab].fg, rgb(0, 0, 0));
-        assert_eq!(buffer[tab].bg, rgb(80, 250, 123));
+        assert_eq!(buffer[tab].bg, rgb(189, 147, 249));
 
         let selected_text =
             find_text(buffer, "projects/").expect("selected text row should be rendered");
@@ -106,14 +106,14 @@ mod tests {
 
         let table_title =
             find_text(buffer, "Changes staged").expect("table title should be rendered");
-        assert_eq!(buffer[table_title].fg, rgb(80, 250, 123));
+        assert_eq!(buffer[table_title].fg, rgb(189, 147, 249));
         assert_eq!(buffer[table_title].bg, rgb(0, 0, 0));
 
         let exit_ok = find_text(buffer, "exit 0").expect("success badge should be rendered");
         assert_eq!(buffer[exit_ok].fg, rgb(80, 250, 123));
         assert_eq!(buffer[exit_ok].bg, rgb(0, 0, 0));
 
-        let empty_pane_cell = &buffer[(2, 10)];
+        let empty_pane_cell = &buffer[(26, 8)];
         assert_eq!(empty_pane_cell.bg, rgb(0, 0, 0));
         assert_eq!(empty_pane_cell.fg, Color::Reset);
     }
@@ -126,7 +126,7 @@ mod tests {
         let frame = terminal.draw(|f| app.render(f)).expect("draw should succeed");
         let buffer = &frame.buffer;
 
-        let right_pane_border = &buffer[(72, 4)];
+        let right_pane_border = &buffer[(82, 2)];
         assert_eq!(right_pane_border.fg, expected);
     }
 
@@ -138,7 +138,7 @@ mod tests {
         let frame = terminal.draw(|f| app.render(f)).expect("draw should succeed");
         let buffer = &frame.buffer;
 
-        let left_pane_border = &buffer[(0, 3)];
+        let left_pane_border = &buffer[(24, 1)];
         assert_eq!(left_pane_border.fg, expected);
     }
 
@@ -167,7 +167,7 @@ mod tests {
         let frame = terminal.draw(|f| app.render(f)).expect("draw should succeed");
         let buffer = &frame.buffer;
 
-        let right_pane_border = &buffer[(72, 4)];
+        let right_pane_border = &buffer[(82, 2)];
         assert_eq!(right_pane_border.fg, expected);
     }
 
@@ -180,7 +180,7 @@ mod tests {
         let frame = terminal.draw(|f| app.render(f)).expect("draw should succeed");
         let buffer = &frame.buffer;
 
-        let left_pane_border = &buffer[(0, 3)];
+        let left_pane_border = &buffer[(24, 1)];
         assert_eq!(left_pane_border.fg, expected);
     }
 
@@ -301,6 +301,7 @@ impl App {
                 self.render_field_search_overlay(frame);
             }
             InputMode::Help => self.render_help_mode(frame),
+            InputMode::About => self.render_about_mode(frame),
         }
     }
 
@@ -308,116 +309,111 @@ impl App {
 
     fn render_preview(&self, frame: &mut Frame) {
         let area = frame.area();
-        let [group_tabs, field_selector, tab_bar, main, status_bar] = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Length(1),
+        let [sidebar, right] =
+            Layout::horizontal([Constraint::Length(super::state::SIDEBAR_W), Constraint::Fill(1)])
+                .areas(area);
+        let [tab_bar, main, status_bar] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Fill(1),
             Constraint::Length(1),
         ])
-        .areas(area);
+        .areas(right);
 
-        self.render_group_tabs(frame, group_tabs);
-        self.render_field_selector(frame, field_selector);
+        self.render_sidebar_tree(frame, sidebar);
         self.render_zellij_tab_bar(frame, tab_bar);
         self.render_zellij_panes(frame, main);
         self.render_zellij_status_bar(frame, status_bar);
     }
 
-    // ── Two-tier element selector ────────────────────────────────────────
+    // ── Sidebar tree ─────────────────────────────────────────────────────
 
-    /// Row 1: Group pills with the active one highlighted.
-    fn render_group_tabs(&self, frame: &mut Frame, area: Rect) {
+    fn render_sidebar_tree(&self, frame: &mut Frame, area: Rect) {
         const BG: Color = Color::Rgb(22, 22, 26);
-        const FG: Color = Color::Rgb(120, 120, 145);
-        const ACCENT_BG: Color = Color::Rgb(97, 88, 150);
-        const ACCENT_FG: Color = Color::Rgb(242, 240, 255);
-
-        let active = self.selected_group;
-        let mut spans: Vec<Span> = Vec::new();
-        for (i, g) in super::state::PreviewGroup::all().iter().enumerate() {
-            let is_active = *g == active;
-            let (fg, bg, m) = if is_active {
-                (ACCENT_FG, ACCENT_BG, Modifier::BOLD)
-            } else {
-                (FG, BG, Modifier::empty())
-            };
-            spans.push(Span::styled(
-                format!(" {} {} ", i + 1, g.label()),
-                Style::new().fg(fg).bg(bg).add_modifier(m),
-            ));
-            spans.push(Span::styled(" ", Style::new().bg(BG)));
-        }
-        spans.push(Span::styled(
-            "  1-4 / ←→ Tab group · ↑↓ field · / find",
-            Style::new().fg(FG).bg(BG),
-        ));
-        frame.render_widget(
-            Paragraph::new(Line::from(spans)).style(Style::new().bg(BG)),
-            area,
-        );
-    }
-
-    /// Row 2: Current group's fields as chips — swatch + label.
-    fn render_field_selector(&self, frame: &mut Frame, area: Rect) {
-        const BG: Color = Color::Rgb(22, 22, 26);
-        const MUTED: Color = Color::Rgb(120, 120, 145);
+        const MUTED: Color = Color::Rgb(90, 90, 110);
+        const GROUP_FG: Color = Color::Rgb(140, 140, 165);
         const SEL_BG: Color = Color::Rgb(44, 41, 60);
         const ACCENT_FG: Color = Color::Rgb(242, 240, 255);
 
-        let group = self.selected_group;
         let t = &self.theme;
+        let active = self.selected_element;
+        let mut lines: Vec<Line> = Vec::new();
 
-        let mut chips: Vec<Span> = Vec::new();
-        for f in group.fields() {
-            let selected = *f == self.selected_element;
-            let fg = get_fg(f.component_type(), t);
-            let bg = get_bg(f.component_type(), t);
-            let fg_ct = accent_on(fg);
-            let bg_ct = accent_on(bg);
-            let has_bg = !f.is_frame();
-
-            if selected {
-                chips.push(Span::styled("\u{258f}", Style::new().fg(ACCENT_FG).bg(SEL_BG)));
-                if has_bg {
-                    chips.push(Span::styled("F", Style::new().fg(fg_ct).bg(fg)));
-                } else {
-                    chips.push(Span::styled(" ", Style::new().bg(fg)));
-                }
-                if has_bg {
-                    chips.push(Span::styled("B", Style::new().fg(bg_ct).bg(bg)));
-                }
-                chips.push(Span::styled(
-                    format!(" {} ", f.label()),
-                    Style::new().fg(ACCENT_FG).bg(SEL_BG).add_modifier(Modifier::BOLD),
-                ));
-                chips.push(Span::styled("\u{2595}", Style::new().fg(ACCENT_FG).bg(SEL_BG)));
+        for g in super::state::PreviewGroup::all() {
+            let is_current_group = *g == self.selected_group;
+            let group_style = if is_current_group {
+                Style::new().fg(ACCENT_FG).bg(BG).add_modifier(Modifier::BOLD)
             } else {
-                chips.push(Span::styled(" ", Style::new().bg(BG)));
-                if has_bg {
-                    chips.push(Span::styled("F", Style::new().fg(fg_ct).bg(fg)));
+                Style::new().fg(GROUP_FG).bg(BG)
+            };
+            lines.push(Line::from(Span::styled(
+                format!(" {} ", g.label()),
+                group_style,
+            )));
+
+            for f in g.fields() {
+                let selected = *f == active;
+                let fg = get_fg(f.component_type(), t);
+                let bg = get_bg(f.component_type(), t);
+                let fg_ct = accent_on(fg);
+                let bg_ct = accent_on(bg);
+                let has_bg = !f.is_frame();
+
+                if selected {
+                    let mut spans = vec![
+                        Span::styled("  ", Style::new().bg(SEL_BG)),
+                        Span::styled("▎", Style::new().fg(ACCENT_FG).bg(SEL_BG)),
+                    ];
+                    if has_bg {
+                        spans.push(Span::styled("F", Style::new().fg(fg_ct).bg(fg)));
+                        spans.push(Span::styled("B", Style::new().fg(bg_ct).bg(bg)));
+                    } else {
+                        spans.push(Span::styled(" ", Style::new().bg(fg)));
+                        spans.push(Span::styled(" ", Style::new().bg(SEL_BG)));
+                    }
+                    spans.push(Span::styled(
+                        format!("  {} ", f.label()),
+                        Style::new().fg(ACCENT_FG).bg(SEL_BG).add_modifier(Modifier::BOLD),
+                    ));
+                    // fill remaining width
+                    let used = spans.iter().map(|s| s.width()).sum::<usize>();
+                    let rem = (area.width as usize).saturating_sub(used);
+                    if rem > 0 {
+                        spans.push(Span::styled(" ".repeat(rem), Style::new().bg(SEL_BG)));
+                    }
+                    lines.push(Line::from(spans));
                 } else {
-                    chips.push(Span::styled(" ", Style::new().bg(fg)));
+                    let mut spans = vec![
+                        Span::styled("   ", Style::new().bg(BG)),
+                    ];
+                    if has_bg {
+                        spans.push(Span::styled("F", Style::new().fg(fg_ct).bg(fg)));
+                        spans.push(Span::styled("B", Style::new().fg(bg_ct).bg(bg)));
+                    } else {
+                        spans.push(Span::styled(" ", Style::new().bg(fg)));
+                        spans.push(Span::styled(" ", Style::new().bg(BG)));
+                    }
+                    spans.push(Span::styled(
+                        format!("  {} ", f.label()),
+                        Style::new().fg(MUTED).bg(BG),
+                    ));
+                    let used = spans.iter().map(|s| s.width()).sum::<usize>();
+                    let rem = (area.width as usize).saturating_sub(used);
+                    if rem > 0 {
+                        spans.push(Span::styled(" ".repeat(rem), Style::new().bg(BG)));
+                    }
+                    lines.push(Line::from(spans));
                 }
-                if has_bg {
-                    chips.push(Span::styled("B", Style::new().fg(bg_ct).bg(bg)));
-                } else {
-                    chips.push(Span::styled(" ", Style::new().bg(BG)));
-                }
-                chips.push(Span::styled(
-                    format!(" {} ", f.label()),
-                    Style::new().fg(MUTED).bg(BG),
-                ));
-                chips.push(Span::styled("  ", Style::new().bg(BG)));
             }
         }
-        // Show FG/BG toggle hint
-        chips.push(Span::styled(
-            "  Tab = FG/BG",
+
+        // hint at bottom
+        lines.push(Line::from(Span::styled(
+            "  / find · 1-4 jump",
             Style::new().fg(MUTED).bg(BG),
-        ));
+        )));
+
         frame.render_widget(
-            Paragraph::new(Line::from(chips)).style(Style::new().bg(BG)),
+            Paragraph::new(lines).style(Style::new().bg(BG)),
             area,
         );
     }
@@ -855,6 +851,7 @@ impl App {
                 InputMode::UpdateRestartConfirm => (" UPDATE ", sel_fg, sel_bg),
                 InputMode::FieldSearch => (" FIND   ", sel_fg, sel_bg),
                 InputMode::Help => (" HELP   ", sel_fg, sel_bg),
+                InputMode::About => (" ABOUT  ", sel_fg, sel_bg),
             }
         };
 
@@ -893,7 +890,7 @@ impl App {
         // (key, long label, short label)
         let bindings: &[(&str, &str, &str)] = match self.input_mode {
             InputMode::Preview => &[
-                ("↑↓←→", "NAVIGATE",   "NAV"),
+                ("↑↓", "ELEMENT", "EL"),
                 ("c",    "COLOR",      "CLR"),
                 ("U",    "UPDATE",     "UPD"),
                 ("s",    "SAVE AS",    "SAVE"),
@@ -963,8 +960,11 @@ impl App {
             ],
             InputMode::Help => &[
                 ("↑↓", "SCROLL", "SCR"),
-                ("Pg", "JUMP",   "PG"),
+                ("Pg", "JUMP", "PG"),
                 ("Esc", "CLOSE", "X"),
+            ],
+            InputMode::About => &[
+                ("any", "CLOSE", "X"),
             ],
         };
 
@@ -1128,7 +1128,7 @@ impl App {
         const SURFACE_BG: Color = Color::Rgb(26, 26, 32);
         const SURFACE_FOCUS_BG: Color = Color::Rgb(34, 31, 46);
 
-        let rects = picker_layout(frame.area(), self.color_editor.mode);
+        let rects = picker_layout(frame.area(), self.color_editor.mode, self.selected_element.preferred_picker_anchor());
         frame.render_widget(Clear, rects.overlay);
 
         let outer = Block::bordered()
@@ -1652,7 +1652,9 @@ impl App {
 
         let rows: &[HelpRow<'_>] = &[
             HelpRow::Section("Preview"),
-            HelpRow::Entry("↑/j  ↓/k  ← →", "Navigate preview elements"),
+            HelpRow::Entry("↑/j  ↓/k", "Navigate preview elements"),
+            HelpRow::Entry("1–4", "Jump to group (TabBar/Panes/Content/Status)"),
+            HelpRow::Entry("/", "Fuzzy search and jump to any element"),
             HelpRow::Entry("Tab", "Toggle FG / BG (pane borders: FG only)"),
             HelpRow::Entry("c", "Open color picker for selected color"),
             HelpRow::Entry("y", "Yank (copy) current color"),
@@ -1663,6 +1665,7 @@ impl App {
             HelpRow::Entry("a", "Apply current theme to Zellij config"),
             HelpRow::Entry("U", "Install latest released binary on Linux x86_64 when available"),
             HelpRow::Entry("?", "Toggle this help screen"),
+            HelpRow::Entry("A", "About — credits, links, and a sick Z"),
             HelpRow::Entry("q / Esc", "Quit"),
             HelpRow::Spacer,
             HelpRow::Section("Color Picker"),
@@ -1853,6 +1856,140 @@ impl App {
         frame.render_widget(
             Paragraph::new(Line::from(footer_spans)).style(Style::new().bg(PANEL_BG)),
             footer_rect,
+        );
+    }
+
+    fn render_about_mode(&self, frame: &mut Frame) {
+        const PANEL_BG: Color = Color::Rgb(22, 22, 26);
+        const PANEL_BORDER: Color = Color::Rgb(90, 85, 115);
+        const ACCENT_FG: Color = Color::Rgb(242, 240, 255);
+        const ACCENT_BG: Color = Color::Rgb(97, 88, 150);
+        const MUTED: Color = Color::Rgb(108, 108, 132);
+        const LINK: Color = Color::Rgb(137, 180, 250);
+        const Z_FG: Color = Color::Rgb(167, 139, 250);
+        const TAGLINE: Color = Color::Rgb(180, 160, 230);
+        let z_style = Style::new().fg(Z_FG).add_modifier(Modifier::BOLD);
+        use ratatui::layout::{Constraint, Layout, Alignment};
+        use ratatui::{prelude::*, widgets::*};
+
+        // Center a 60×20 card on screen
+        let area = frame.area();
+        let card_w = 60u16;
+        let card_h = 18u16;
+        let card = Rect {
+            x: area.x + (area.width.saturating_sub(card_w)) / 2,
+            y: area.y + (area.height.saturating_sub(card_h)) / 2,
+            width: card_w,
+            height: card_h,
+        };
+
+        // Dim backdrop
+        frame.render_widget(Clear, area);
+
+        let outer = Block::bordered()
+            .border_type(BorderType::Rounded)
+            .border_style(Style::new().fg(PANEL_BORDER))
+            .style(Style::new().bg(PANEL_BG));
+        let inner = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(9),  // ASCII logo
+            Constraint::Length(1),
+            Constraint::Length(1),  // subtitle
+            Constraint::Length(1),  // tagline
+            Constraint::Length(1),
+            Constraint::Length(2),  // links
+            Constraint::Fill(1),
+        ])
+        .areas(outer.inner(card));
+        let [_spacer1, logo_area, _spacer2, subtitle_area, tagline_area, _spacer3, links_area, _fill] = inner;
+        frame.render_widget(outer, card);
+
+        // ASCII ZELLIT logo
+        let z_logo = vec![
+            Line::from(Span::styled(
+                " ███████╗ ███████╗ ██╗      ██╗      ██╗ ████████╗",
+                z_style,
+            )),
+            Line::from(Span::styled(
+                " ╚══███╔╝ ██╔════╝ ██║      ██║      ██║ ╚══██╔══╝",
+                z_style,
+            )),
+            Line::from(Span::styled(
+                "   ███╔╝  █████╗   ██║      ██║      ██║    ██║   ",
+                z_style,
+            )),
+            Line::from(Span::styled(
+                "  ███╔╝   ██╔══╝   ██║      ██║      ██║    ██║   ",
+                z_style,
+            )),
+            Line::from(Span::styled(
+                " ███████╗ ███████╗ ███████╗ ███████╗ ██║    ██║   ",
+                z_style,
+            )),
+            Line::from(Span::styled(
+                " ╚══════╝ ╚══════╝ ╚══════╝ ╚══════╝ ╚═╝    ╚═╝   ",
+                z_style,
+            )),
+        ];
+        frame.render_widget(
+            Paragraph::new(z_logo).alignment(Alignment::Center),
+            logo_area,
+        );
+
+        // Tagline — subtitle + author
+        let subtitle = vec![Span::styled(
+            "Zellij theme configurator",
+            Style::new().fg(TAGLINE).add_modifier(Modifier::BOLD),
+        )];
+        let tagline = vec![Span::styled(
+            "because default themes suck  —allie",
+            Style::new().fg(TAGLINE).add_modifier(Modifier::ITALIC),
+        )];
+        frame.render_widget(
+            Paragraph::new(Line::from(subtitle)).alignment(Alignment::Center),
+            subtitle_area,
+        );
+        frame.render_widget(
+            Paragraph::new(Line::from(tagline)).alignment(Alignment::Center),
+            tagline_area,
+        );
+
+        // Links section
+        let links = vec![
+            Line::from(vec![
+                Span::styled(" repo:    ", Style::new().fg(MUTED)),
+                Span::styled(
+                    "github.com/allisonhere/zellij-bar-theme-config",
+                    Style::new().fg(LINK),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(" issues:  ", Style::new().fg(MUTED)),
+                Span::styled(
+                    "github.com/allisonhere/zellij-bar-theme-config/issues",
+                    Style::new().fg(LINK),
+                ),
+            ]),
+        ];
+        frame.render_widget(
+            Paragraph::new(links).alignment(Alignment::Center),
+            links_area,
+        );
+
+        // Footer — press any key
+        let footer = vec![Span::styled(
+            " press any key to close ",
+            Style::new().fg(ACCENT_FG).bg(ACCENT_BG).add_modifier(Modifier::BOLD),
+        )];
+        let footer_area = Rect {
+            x: card.x + 1,
+            y: card.y + card_h - 1,
+            width: card_w.saturating_sub(2),
+            height: 1,
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(footer)).alignment(Alignment::Center),
+            footer_area,
         );
     }
 

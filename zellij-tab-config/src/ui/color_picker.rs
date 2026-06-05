@@ -524,10 +524,39 @@ impl ColorEditor {
     }
 }
 
-pub fn picker_layout(area: Rect, mode: ColorPickerMode) -> PickerRects {
-    let overlay_w = 76u16.min(area.width.saturating_sub(4));
-    let overlay_h = 24u16.min(area.height.saturating_sub(4));
-    let overlay = super::render::centered_rect(area, overlay_w, overlay_h);
+use crate::ui::state::{OverlayAnchor, SIDEBAR_W};
+
+const OVERLAY_W: u16 = 76;
+const OVERLAY_H: u16 = 24;
+
+fn overlay_rect(area: Rect, anchor: OverlayAnchor) -> Rect {
+    let right_area = Rect {
+        x: area.x + SIDEBAR_W,
+        y: area.y,
+        width: area.width.saturating_sub(SIDEBAR_W),
+        height: area.height,
+    };
+    let w = OVERLAY_W.min(right_area.width.saturating_sub(2));
+    let h = OVERLAY_H.min(right_area.height.saturating_sub(2));
+
+    match anchor {
+        OverlayAnchor::BottomLeft => Rect {
+            x: right_area.x,
+            y: right_area.y + right_area.height.saturating_sub(h),
+            width: w,
+            height: h,
+        },
+        OverlayAnchor::BottomRight => Rect {
+            x: right_area.x + right_area.width.saturating_sub(w),
+            y: right_area.y + right_area.height.saturating_sub(h),
+            width: w,
+            height: h,
+        },
+    }
+}
+
+pub fn picker_layout(area: Rect, mode: ColorPickerMode, anchor: OverlayAnchor) -> PickerRects {
+    let overlay = overlay_rect(area, anchor);
     let inner = Rect::new(overlay.x + 1, overlay.y + 1, overlay.width.saturating_sub(2), overlay.height.saturating_sub(2));
     let [header, body, _footer] = Layout::vertical([
         Constraint::Length(1),

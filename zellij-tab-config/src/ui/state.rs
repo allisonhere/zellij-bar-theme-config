@@ -65,6 +65,17 @@ pub struct App {
     pub restart_after_exit: bool,
 }
 
+/// Width of the left navigation sidebar, in columns. Shared between the
+/// preview layout (`render`) and the color-picker anchoring math
+/// (`color_picker`) so the two can't drift apart.
+pub const SIDEBAR_W: u16 = 24;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverlayAnchor {
+    BottomLeft,
+    BottomRight,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputMode {
     Preview,
@@ -77,6 +88,7 @@ pub enum InputMode {
     UpdateRestartConfirm,
     FieldSearch,
     Help,
+    About,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,10 +157,6 @@ impl PreviewGroup {
             Self::Status => &[ExitSuccess, ExitError, StatusBar],
         }
     }
-
-    pub fn index(&self) -> usize {
-        Self::all().iter().position(|g| g == self).unwrap_or(0)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -208,6 +216,16 @@ impl PreviewElement {
 
     pub fn is_frame(&self) -> bool {
         matches!(self, Self::PaneSelected | Self::PaneUnselected | Self::PaneHighlight)
+    }
+
+    /// Where should the color picker open so the selected element stays visible?
+    /// The highlight pane is the only element rendered on the right side of the
+    /// preview, so it anchors bottom-left; everything else anchors bottom-right.
+    pub fn preferred_picker_anchor(&self) -> OverlayAnchor {
+        match self {
+            Self::PaneHighlight => OverlayAnchor::BottomLeft,
+            _ => OverlayAnchor::BottomRight,
+        }
     }
 
     pub fn component_type(&self) -> ThemeComponentType {
@@ -317,20 +335,32 @@ impl App {
         app
     }
 
-    // ── Group / field navigation ─────────────────────────────────────────
+    // ── Flat element navigation (sidebar tree) ───────────────────────────
 
-    /// ← / → — switch group
-    pub fn prev_group(&mut self) {
-        let groups = PreviewGroup::all();
-        let idx = self.selected_group.index();
-        let next = if idx == 0 { groups.len() - 1 } else { idx - 1 };
-        self.select_group(groups[next]);
+    /// Move to the previous element in the flat list across all groups.
+    pub fn prev_element(&mut self) {
+        let all = PreviewElement::all();
+        let idx = all.iter().position(|e| *e == self.selected_element).unwrap_or(0);
+        let next_idx = if idx == 0 { all.len() - 1 } else { idx - 1 };
+        self.selected_element = all[next_idx];
+        self.selected_group = all[next_idx].group();
+        if self.selected_element.is_frame() {
+            self.selected_attribute = PreviewAttribute::Base;
+        }
+        self.flash_selection();
     }
 
-    pub fn next_group(&mut self) {
-        let groups = PreviewGroup::all();
-        let idx = self.selected_group.index();
-        self.select_group(groups[(idx + 1) % groups.len()]);
+    /// Move to the next element in the flat list across all groups.
+    pub fn next_element(&mut self) {
+        let all = PreviewElement::all();
+        let idx = all.iter().position(|e| *e == self.selected_element).unwrap_or(0);
+        let next_idx = (idx + 1) % all.len();
+        self.selected_element = all[next_idx];
+        self.selected_group = all[next_idx].group();
+        if self.selected_element.is_frame() {
+            self.selected_attribute = PreviewAttribute::Base;
+        }
+        self.flash_selection();
     }
 
     /// Number keys 1–4 → jump straight to that group.
@@ -343,28 +373,6 @@ impl App {
     pub fn select_group(&mut self, group: PreviewGroup) {
         self.selected_group = group;
         self.selected_element = group.fields()[0];
-        self.flash_selection();
-    }
-
-    /// ↑ / ↓ — previous/next field within the current group (wraps).
-    pub fn prev_field_in_group(&mut self) {
-        let fields = self.selected_group.fields();
-        let idx = fields.iter().position(|f| *f == self.selected_element).unwrap_or(0);
-        let next = if idx == 0 { fields.len() - 1 } else { idx - 1 };
-        self.selected_element = fields[next];
-        if self.selected_element.is_frame() {
-            self.selected_attribute = PreviewAttribute::Base;
-        }
-        self.flash_selection();
-    }
-
-    pub fn next_field_in_group(&mut self) {
-        let fields = self.selected_group.fields();
-        let idx = fields.iter().position(|f| *f == self.selected_element).unwrap_or(0);
-        self.selected_element = fields[(idx + 1) % fields.len()];
-        if self.selected_element.is_frame() {
-            self.selected_attribute = PreviewAttribute::Base;
-        }
         self.flash_selection();
     }
 

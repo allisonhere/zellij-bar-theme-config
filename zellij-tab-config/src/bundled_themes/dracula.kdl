@@ -26,14 +26,14 @@ themes {
         }
         ribbon_selected {
             base 0 0 0
-            background 80 250 123
+            background 189 147 249
             emphasis_0 255 85 85
             emphasis_1 255 184 108
             emphasis_2 255 121 198
             emphasis_3 98 114 164
         }
         table_title {
-            base 80 250 123
+            base 189 147 249
             background 0 0 0
             emphasis_0 255 184 108
             emphasis_1 139 233 253
@@ -81,7 +81,7 @@ themes {
             emphasis_3 255 121 198
         }
         frame_selected {
-            base 80 250 123
+            base 189 147 249
             background 0 0 0
             emphasis_0 255 184 108
             emphasis_1 139 233 253
